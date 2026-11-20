@@ -12,6 +12,7 @@ import ioc_fanger  # pyright: ignore[reportMissingTypeStubs]
 from verdikt.models import IOC, IOCType
 
 INTERNAL_SUFFIXES = (".local", ".internal", ".lan", ".corp", ".home.arpa")
+MAX_INPUT_LEN = 2048  # longest real URL we accept; stops a huge paste from reaching the regexes
 _HEX = re.compile(r"^[0-9a-f]+$")
 _HASH_LEN = {32: IOCType.MD5, 40: IOCType.SHA1, 64: IOCType.SHA256}
 _LABEL = re.compile(r"^[a-z0-9_]([a-z0-9_-]{0,61}[a-z0-9_])?$")
@@ -44,7 +45,8 @@ def is_internal_host(host: str, extra_suffixes: Iterable[str] = ()) -> bool:
     if host == "localhost" or host.endswith(".localhost") or "." not in host:
         return True
     suffixes = [*INTERNAL_SUFFIXES, *(_dot(s) for s in extra_suffixes if s.strip())]
-    return any(host.endswith(s) for s in suffixes)
+    # the apex itself (`corp.example.com`) is as internal as its subdomains
+    return any(host.endswith(s) or host == s[1:] for s in suffixes)
 
 
 def _dot(suffix: str) -> str:
@@ -67,7 +69,11 @@ def _normalize_domain(host: str) -> str:
 
 
 def _normalize_url(text: str) -> str:
-    parts = urlsplit(text)
+    try:
+        parts = urlsplit(text)
+        port = parts.port
+    except ValueError as exc:  # bad port or unbalanced IPv6 brackets
+        raise DetectError(f"invalid URL: {text!r}") from exc
     if parts.scheme.lower() not in ("http", "https", "ftp") or not parts.hostname:
         raise DetectError(f"invalid URL: {text!r}")
     ip = _parse_ip(parts.hostname)
@@ -75,7 +81,6 @@ def _normalize_url(text: str) -> str:
         host = _normalize_domain(parts.hostname)
     else:
         host = f"[{ip.compressed}]" if ip.version == 6 else ip.compressed
-    port = parts.port
     default = {"http": 80, "https": 443, "ftp": 21}[parts.scheme.lower()]
     netloc = host if port in (None, default) else f"{host}:{port}"
     path = parts.path or "/"
@@ -84,6 +89,8 @@ def _normalize_url(text: str) -> str:
 
 def detect(raw: str, internal_domains: Iterable[str] = ()) -> IOC:
     """Refang, classify and normalize `raw`; reject internal targets. No network I/O."""
+    if len(raw) > MAX_INPUT_LEN:
+        raise DetectError(f"input too long (max {MAX_INPUT_LEN} characters)")
     text = refang(raw)
     if not text:
         raise DetectError("empty input")

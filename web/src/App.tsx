@@ -41,6 +41,7 @@ export default function App() {
   const [report, setReport] = useState<Report | null>(null);
   const [tab, setTab] = useState<Tab>("map");
   const [theme, setTheme] = useState<Theme>(initialTheme);
+  const [openError, setOpenError] = useState<string | null>(null);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -57,6 +58,7 @@ export default function App() {
   const check = useMutation({
     mutationFn: (ioc: string) => api.check(ioc),
     onSuccess: (r) => {
+      setOpenError(null);
       setReport(r);
       void qc.invalidateQueries({ queryKey: ["reports"] });
       void qc.invalidateQueries({ queryKey: ["sources"] });
@@ -65,6 +67,7 @@ export default function App() {
 
   const run = useCallback(
     (ioc: string) => {
+      if (check.isPending) return; // a late answer to the first check must not replace the second
       setValue(ioc);
       check.mutate(ioc);
     },
@@ -72,9 +75,14 @@ export default function App() {
   );
 
   const open = useCallback(async (id: string) => {
-    const r = await api.report(id);
-    setReport(r);
-    setValue(r.ioc);
+    try {
+      const r = await api.report(id);
+      setOpenError(null);
+      setReport(r);
+      setValue(r.ioc);
+    } catch (e) {
+      setOpenError(e instanceof Error ? e.message : "could not open the report");
+    }
   }, []);
 
   useEffect(() => {
@@ -100,13 +108,14 @@ export default function App() {
 
   const vt = sources.data?.find((s) => s.name === "virustotal");
   const enabled = sources.data?.filter((s) => s.enabled) ?? [];
-  const noKeys = sources.data !== undefined && enabled.length <= 1;
+  // keyless sources (InternetDB, OTX, ...) are always on, so test for any key-gated source
+  const noKeys = sources.data !== undefined && !enabled.some((s) => s.requires_key);
 
   return (
     <div className="relative flex min-h-full flex-col">
       <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-panel px-4 py-2.5">
         <div className="flex items-center gap-2">
-          <span aria-hidden="true" className="grid h-7 w-7 place-items-center rounded-lg bg-violet-600 font-mono text-sm font-bold text-white" style={{ background: "var(--violet-600)" }}>
+          <span aria-hidden="true" className="grid h-7 w-7 place-items-center rounded-lg font-mono text-sm font-bold text-white" style={{ background: "var(--violet-600)" }}>
             v
           </span>
           <span className="text-base font-bold tracking-tight">verdikt</span>
@@ -144,6 +153,11 @@ export default function App() {
           {noKeys && (
             <p className="rounded-md border border-line-strong bg-panel p-3 text-sm" role="note">
               Only keyless sources are enabled. Add API keys to .env to enable more (see .env.example).
+            </p>
+          )}
+          {openError && (
+            <p role="alert" className="rounded-md border border-malicious bg-panel p-3 text-sm text-malicious">
+              {openError}
             </p>
           )}
           {check.isError && (

@@ -13,7 +13,7 @@ export function EmptyState() {
         className="h-32 w-32 rounded-full"
         style={{
           background: "radial-gradient(circle at 35% 30%, var(--violet-300), var(--violet-600) 55%, var(--plum-900) 100%)",
-          boxShadow: "0 0 60px 8px rgb(106 76 245 / 0.35)",
+          boxShadow: "0 0 60px 8px color-mix(in srgb, var(--violet-500) 35%, transparent)",
         }}
       />
       <div className="text-center">

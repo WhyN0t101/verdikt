@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import mimetypes
 import os
 import secrets
 from collections.abc import AsyncGenerator, Awaitable, Callable
@@ -25,6 +26,16 @@ from verdikt.models import Model, Report
 TOKEN_HEADER = "x-verdikt-token"  # noqa: S105
 TOKEN_PLACEHOLDER = "<!--VERDIKT_TOKEN-->"  # noqa: S105
 WEB_DIST = Path(__file__).resolve().parent.parent / "web_dist"
+# StaticFiles trusts the OS mime table; on Windows the registry can map .js/.css to the wrong
+# type, which `nosniff` then turns into a blank page. Pin the types the SPA needs.
+MIME_TYPES = {
+    ".js": "text/javascript",
+    ".mjs": "text/javascript",
+    ".css": "text/css",
+    ".woff2": "font/woff2",
+    ".svg": "image/svg+xml",
+    ".json": "application/json",
+}
 CSP = (
     "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
     "img-src 'self' data:; font-src 'self' data:; connect-src 'self'; "
@@ -66,6 +77,8 @@ def create_app(
     web_dist: Path | None = None,
 ) -> FastAPI:
     """Build the app. Without arguments, reads port/token from the env `verdikt ui` sets."""
+    for ext, mime in MIME_TYPES.items():
+        mimetypes.add_type(mime, ext)
     port = port if port is not None else int(os.environ.get("VERDIKT_PORT", "8765"))
     token = token or os.environ.get("VERDIKT_SESSION_TOKEN") or secrets.token_urlsafe(32)
     dist = web_dist if web_dist is not None else WEB_DIST

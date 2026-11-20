@@ -11,6 +11,8 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from verdikt.models import Model, Report, SourceResult
 
 Clock = Callable[[], datetime]
@@ -63,7 +65,10 @@ class Cache:
             ).fetchone()
         if row is None:
             return None
-        result = SourceResult.model_validate_json(row[0])
+        try:
+            result = SourceResult.model_validate_json(row[0])
+        except ValidationError:  # written by an older schema: refetch instead of failing
+            return None
         if self._clock() - result.fetched_at >= ttl:
             return None
         return result.model_copy(update={"cached": True})

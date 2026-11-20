@@ -138,3 +138,24 @@ async def test_missing_build_shows_hint(tmp_path: Path) -> None:
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url=f"http://127.0.0.1:{PORT}") as c:
         assert "not built" in (await c.get("/")).text
+
+
+async def test_assets_get_correct_mime_even_if_os_table_is_wrong(tmp_path: Path) -> None:
+    import mimetypes
+
+    mimetypes.add_type("application/json", ".js")  # what a bad Windows registry does
+    mimetypes.add_type("application/json", ".css")
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<head><!--VERDIKT_TOKEN--></head>", encoding="utf-8")
+    (dist / "assets" / "a.js").write_text("export {}", encoding="utf-8")
+    (dist / "assets" / "a.css").write_text("body{}", encoding="utf-8")
+    settings = Settings(_env_file=None)  # pyright: ignore[reportCallIssue]
+    engine = Engine(settings, load_rules(), Cache(":memory:"), httpx.AsyncClient(), sources=[])
+    app = create_app(engine, port=PORT, token=TOKEN, web_dist=dist)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url=f"http://127.0.0.1:{PORT}") as c:
+        js = await c.get("/assets/a.js")
+        css = await c.get("/assets/a.css")
+    assert js.headers["content-type"].startswith("text/javascript")
+    assert css.headers["content-type"].startswith("text/css")

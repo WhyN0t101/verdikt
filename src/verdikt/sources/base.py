@@ -189,7 +189,15 @@ class BaseSource:
             return self.result(Status.ERROR, "timeout")
         except httpx.HTTPError as exc:
             return self.result(Status.ERROR, f"network error: {type(exc).__name__}")
-        except (ValueError, KeyError, TypeError, ValidationError) as exc:
+        except (
+            ValueError,
+            KeyError,
+            IndexError,
+            TypeError,
+            AttributeError,
+            ArithmeticError,
+            ValidationError,
+        ) as exc:
             # malformed vendor response; message omitted: it may echo attacker-controlled data
             log.warning("%s: malformed response (%s)", self.name, type(exc).__name__)
             return self.result(Status.ERROR, "malformed response")

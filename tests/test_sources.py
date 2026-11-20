@@ -426,3 +426,19 @@ async def test_urlscan_without_verdict_data_is_not_a_clean_vote(
         return_value=httpx.Response(200, json={"results": [{"page": {"ip": "203.0.113.9"}}]})
     )
     assert (await Urlscan().query(DOM, gate)).status is Status.NOT_FOUND
+
+
+@pytest.mark.parametrize(("source", "ioc"), ALL, ids=IDS)
+@pytest.mark.parametrize(
+    "body",
+    [
+        '{"results": ["x"], "data": [1], "pulse_info": {"pulses": ["x"], "count": 1}}',
+        '{"count": Infinity, "data": {"attributes": {"asn": Infinity}}}',
+    ],
+    ids=["non-dict-members", "infinity"],
+)
+async def test_odd_member_shapes_never_raise(
+    source: BaseSource, ioc: IOC, body: str, router: respx.MockRouter, gate: Gate
+) -> None:
+    router.route().mock(return_value=httpx.Response(200, text=body))
+    await source.query(ioc, gate)  # must return a SourceResult, never raise

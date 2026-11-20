@@ -71,3 +71,20 @@ def test_unknown_input_rejected(raw: str) -> None:
 def test_internal_domain_suffix_is_label_aware() -> None:
     # notcorp.example.com must not match the corp.example.com suffix
     assert detect("notcorp.example.com", ["corp.example.com"]).type is IOCType.DOMAIN
+
+
+@pytest.mark.parametrize("raw", ["corp.example.com", "home.arpa", "http://corp.example.com/x"])
+def test_internal_suffix_apex_itself_is_internal(raw: str) -> None:
+    with pytest.raises(DetectError):
+        detect(raw, internal_domains=["corp.example.com"])
+
+
+@pytest.mark.parametrize("raw", ["http://evil.com:99999/", "http://evil.com:abc/", "http://[bad/"])
+def test_malformed_url_authority_is_a_detect_error(raw: str) -> None:
+    with pytest.raises(DetectError):
+        detect(raw)
+
+
+def test_oversized_input_is_rejected() -> None:
+    with pytest.raises(DetectError, match="too long"):
+        detect("a" * 10_000 + ".com")

@@ -39,7 +39,7 @@ def build_output(report: dict[str, Any]) -> dict[str, Any]:
 def run(job: dict[str, Any]) -> dict[str, Any]:
     data = str(job["data"])
     proc = subprocess.run(  # noqa: S603
-        [sys.executable, "-m", "verdikt", "check", data, "--json"],
+        [sys.executable, "-m", "verdikt", "check", "--json", "--", data],
         capture_output=True,
         text=True,
         timeout=120,

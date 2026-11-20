@@ -210,6 +210,7 @@ class Source(Protocol):
    - Hostnames ending in any suffix from the `VERDIKT_INTERNAL_DOMAINS` setting (your company domains).
 5. Unknown input exits with code 1 (the §10 "any error" code; 4 is not used) and a message. No API call is made.
 6. Domains whose last label is all digits or `0x` hex (`127.1`, `0x7f.0.0.1`) are rejected: browsers read them as IPs, so they are not public names.
+7. Input longer than 2048 characters is rejected before any parsing. A suffix in the internal list also matches the bare apex (`corp.example.com`, not only `*.corp.example.com`).
 
 ---
 

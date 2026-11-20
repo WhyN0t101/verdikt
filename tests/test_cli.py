@@ -151,3 +151,14 @@ def test_cache_clear(use_profile: UseProfile) -> None:
     result = runner.invoke(cli.app, ["cache", "clear"])
     assert result.exit_code == 0
     assert "cleared" in result.output
+
+
+def test_render_survives_rich_markup_in_feed_data() -> None:
+    from verdikt.models import IOCType, Level, Report, SourceResult
+
+    row = SourceResult(source="otx", status=Status.OK, summary="[/oops] [bold]x", level=Level.SAFE)
+    report = Report(
+        id="1", ioc="http://evil.com/[/bold]", ioc_type=IOCType.URL, level=Level.SAFE,
+        agreeing=1, total=1, results=[row],
+    )  # fmt: skip
+    cli._render(report)  # pyright: ignore[reportPrivateUsage]  # must not raise MarkupError

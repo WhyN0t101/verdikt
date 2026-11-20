@@ -55,8 +55,8 @@ export function VerdictCard({ report }: { report: Report }) {
         <div className="mt-4 border-t border-line pt-3">
           <h3 className="label">Reasons</h3>
           <ul className="mt-1.5 space-y-1 text-sm">
-            {report.reasons.map((r) => (
-              <li key={r} className="mono text-[13px]">
+            {report.reasons.map((r, i) => (
+              <li key={i} className="mono text-[13px]">
                 {r}
               </li>
             ))}

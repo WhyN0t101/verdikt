@@ -58,3 +58,22 @@ def test_geo_without_databases_is_unavailable(tmp_path: Path) -> None:
     assert GeoLookup(None).available is False
     assert GeoLookup(tmp_path).available is False
     assert GeoLookup(tmp_path).lookup("8.8.8.8") is None
+
+
+def test_cortex_passes_observable_after_option_terminator(monkeypatch: Any) -> None:
+    # observable data is attacker-controlled: "--notify" must not be read as an option
+    mod = _load_cortex()
+    seen: list[list[str]] = []
+
+    class Proc:
+        returncode = 0
+        stdout = json.dumps({"level": "safe", "agreeing": 2, "total": 2})
+        stderr = ""
+
+    def fake_run(cmd: list[str], **_: Any) -> Proc:
+        seen.append(cmd)
+        return Proc()
+
+    monkeypatch.setattr(mod.subprocess, "run", fake_run)
+    mod.run({"data": "--notify"})
+    assert seen[0][-2:] == ["--", "--notify"]

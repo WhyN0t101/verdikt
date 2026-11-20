@@ -15,6 +15,7 @@ from typing import Annotated
 import httpx
 import typer
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from verdikt.config import Settings, get_settings
@@ -74,7 +75,7 @@ async def _with_engine[T](
 def _render(report: Report) -> None:
     style = LEVEL_STYLE[report.level]
     out.print(
-        f"[{style}]{report.level.value.upper()}[/]  [bold]{report.ioc}[/]  "
+        f"[{style}]{report.level.value.upper()}[/]  [bold]{escape(report.ioc)}[/]  "
         f"({report.ioc_type.value})  {report.agreeing}/{report.total} sources · "
         f"{report.duration_ms / 1000:.1f}s",
         markup=True,
@@ -87,10 +88,10 @@ def _render(report: Report) -> None:
         table.add_column(col)
     for r in report.results:
         table.add_row(
-            r.source,
+            escape(r.source),
             r.level.value + (" (cached)" if r.cached else ""),
             r.status.value,
-            r.summary,
+            escape(r.summary),
         )
     out.print(table)
     if report.geo:

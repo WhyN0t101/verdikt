@@ -39,7 +39,7 @@ export function GraphView({ graph, rootId, theme, sources, pending, onPivot }: P
       container: host.current,
       elements: [
         ...graph.nodes.map((n) => ({
-          data: { id: n.id, label: shortenMiddle(n.label, 24), kind: n.kind, level: n.level, full: n.label },
+          data: { id: n.id, label: shortenMiddle(n.label, 24), kind: n.kind, level: n.level, full: n.label, root: n.id === rootId },
         })),
         ...graph.edges.map((e, i) => ({ data: { id: `e${i}`, source: e.source, target: e.target, label: e.label } })),
       ],
@@ -61,7 +61,7 @@ export function GraphView({ graph, rootId, theme, sources, pending, onPivot }: P
             height: 26,
           },
         },
-        { selector: `node[id = "${rootId}"]`, style: { width: 36, height: 36, "border-width": 3 } },
+        { selector: "node[?root]", style: { width: 36, height: 36, "border-width": 3 } },
         { selector: "node:selected", style: { "overlay-color": css("--violet-500"), "overlay-opacity": 0.25, "overlay-padding": 6 } },
         {
           selector: "edge",
