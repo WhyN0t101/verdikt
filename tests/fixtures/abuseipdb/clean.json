@@ -1,0 +1,9 @@
+{
+  "data": {
+    "ipAddress": "8.8.8.8",
+    "abuseConfidenceScore": 0,
+    "totalReports": 0,
+    "isTor": false,
+    "usageType": "Content Delivery Network"
+  }
+}

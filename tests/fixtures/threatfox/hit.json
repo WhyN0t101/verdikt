@@ -1,0 +1,11 @@
+{
+  "query_status": "ok",
+  "data": [
+    {
+      "ioc": "185.220.101.4:443",
+      "threat_type": "botnet_cc",
+      "malware_printable": "Cobalt Strike",
+      "confidence_level": 100
+    }
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "sha256s": [
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  ],
+  "reports": [
+    {
+      "verdict": "malicious",
+      "threat_score": 100,
+      "av_detect": 80,
+      "vx_family": "Emotet"
+    }
+  ]
+}

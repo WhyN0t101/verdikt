@@ -1,0 +1,17 @@
+{
+  "ip": "185.220.101.4",
+  "ports": [
+    22,
+    443
+  ],
+  "cpes": [],
+  "hostnames": [
+    "node.example"
+  ],
+  "tags": [
+    "tor"
+  ],
+  "vulns": [
+    "CVE-2020-0001"
+  ]
+}

@@ -1,0 +1,42 @@
+# Shuffle app definition (OpenAPI 3). Calls a running `verdikt ui` on the same host.
+# Start verdikt with a fixed token: VERDIKT_SESSION_TOKEN=<secret> verdikt ui --no-open
+openapi: 3.0.0
+info:
+  title: verdikt
+  description: IOC triage verdict from verdikt.
+  version: 0.1.0
+servers:
+  - url: http://127.0.0.1:8765
+paths:
+  /api/check:
+    post:
+      summary: Check an IOC
+      operationId: check_ioc
+      parameters:
+        - name: X-Verdikt-Token
+          in: header
+          required: true
+          description: Value of VERDIKT_SESSION_TOKEN
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [ioc]
+              properties:
+                ioc:
+                  type: string
+                  description: IP, domain, URL or hash
+                no_cache:
+                  type: boolean
+                  default: false
+      responses:
+        "200":
+          description: Report (level is malicious, suspicious, safe or unknown)
+          content:
+            application/json:
+              schema:
+                type: object

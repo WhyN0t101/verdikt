@@ -1,0 +1,9 @@
+{
+  "query_status": "ok",
+  "url": "http://evil.example/a.exe",
+  "url_status": "online",
+  "threat": "malware_download",
+  "tags": [
+    "exe"
+  ]
+}

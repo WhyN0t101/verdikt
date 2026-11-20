@@ -1,0 +1,25 @@
+{
+  "data": {
+    "id": "evil.example",
+    "type": "domain",
+    "attributes": {
+      "last_analysis_stats": {
+        "malicious": 7,
+        "suspicious": 0,
+        "harmless": 50,
+        "undetected": 30,
+        "timeout": 0
+      },
+      "last_dns_records": [
+        {
+          "type": "A",
+          "value": "203.0.113.9"
+        },
+        {
+          "type": "MX",
+          "value": "mail.evil.example"
+        }
+      ]
+    }
+  }
+}

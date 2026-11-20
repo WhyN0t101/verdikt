@@ -1,0 +1,10 @@
+{
+  "data": {
+    "ipAddress": "185.220.101.4",
+    "abuseConfidenceScore": 100,
+    "totalReports": 2341,
+    "isTor": true,
+    "usageType": "Data Center/Web Hosting/Transit",
+    "countryCode": "DE"
+  }
+}

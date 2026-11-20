@@ -1,0 +1,15 @@
+{
+  "query_status": "ok",
+  "data": [
+    {
+      "ioc": "11.220.101.4:80",
+      "threat_type": "botnet_cc",
+      "malware_printable": "Other"
+    },
+    {
+      "ioc": "185.220.101.45:443",
+      "threat_type": "botnet_cc",
+      "malware_printable": "Other"
+    }
+  ]
+}

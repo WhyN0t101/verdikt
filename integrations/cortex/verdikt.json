@@ -1,0 +1,13 @@
+{
+  "name": "Verdikt",
+  "version": "0.1",
+  "author": "verdikt",
+  "url": "https://example.invalid/verdikt",
+  "license": "AGPL-V3",
+  "description": "IOC triage across several threat-intel sources with one verdict.",
+  "dataTypeList": ["ip", "domain", "fqdn", "url", "hash"],
+  "command": "verdikt/verdikt.py",
+  "baseConfig": "Verdikt",
+  "configurationItems": [],
+  "config": { "check_tlp": false, "max_tlp": 3, "service": "check" }
+}

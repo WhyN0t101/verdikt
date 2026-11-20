@@ -1,0 +1,81 @@
+/* Design tokens. Palette per docs/DESIGN.md: violet is the only accent; the four level
+   colours are reserved for verdicts. Swap values here to retheme. */
+:root {
+  /* brand */
+  --violet-600: #4b2ff0;
+  --violet-500: #6a4cf5;
+  --violet-300: #a98bef;
+  --lavender-200: #cdbdf2;
+  --plum-900: #24172f;
+
+  /* dark (default) */
+  --bg: #120d1a;
+  --panel: #1a1324;
+  --panel-2: #221a2e;
+  --border: rgb(205 189 242 / 0.14);
+  --border-strong: rgb(205 189 242 / 0.28);
+  --text: #ece8f5;
+  --muted: #a39cb5;
+  --accent: var(--violet-500);
+  --accent-text: var(--violet-300);
+  --on-accent: #ffffff;
+  --focus: var(--violet-300);
+  --grid: rgb(205 189 242 / 0.1);
+  --land: rgb(205 189 242 / 0.34);
+  --noise-opacity: 0.05;
+
+  --lvl-malicious: #ff4d5e;
+  --lvl-suspicious: #ffb020;
+  --lvl-safe: #2bd9a0;
+  --lvl-unknown: #8a8794;
+  --lvl-info: var(--violet-300);
+
+  --font-ui: "Inter Variable", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono Variable", ui-monospace, monospace;
+}
+
+/* light = the palette reference: paper, ink, circle grid. Level colours are darkened to keep
+   >= 4.5:1 on paper. */
+:root[data-theme="light"] {
+  --bg: #f6f5f8;
+  --panel: #ffffff;
+  --panel-2: #efedf4;
+  --border: rgb(17 16 20 / 0.12);
+  --border-strong: rgb(17 16 20 / 0.26);
+  --text: #111014;
+  --muted: #5b5768;
+  --accent-text: var(--violet-600);
+  --focus: var(--violet-600);
+  --grid: #d9d6e0;
+  --land: rgb(75 47 240 / 0.3);
+  --noise-opacity: 0.07;
+
+  --lvl-malicious: #c4182b;
+  --lvl-suspicious: #8f5600;
+  --lvl-safe: #0a7a5a;
+  --lvl-unknown: #5f5c6b;
+  --lvl-info: var(--violet-600);
+}
+
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg: #f6f5f8;
+    --panel: #ffffff;
+    --panel-2: #efedf4;
+    --border: rgb(17 16 20 / 0.12);
+    --border-strong: rgb(17 16 20 / 0.26);
+    --text: #111014;
+    --muted: #5b5768;
+    --accent-text: var(--violet-600);
+    --focus: var(--violet-600);
+    --grid: #d9d6e0;
+    --land: rgb(75 47 240 / 0.3);
+    --noise-opacity: 0.07;
+
+    --lvl-malicious: #c4182b;
+    --lvl-suspicious: #8f5600;
+    --lvl-safe: #0a7a5a;
+    --lvl-unknown: #5f5c6b;
+    --lvl-info: var(--violet-600);
+  }
+}

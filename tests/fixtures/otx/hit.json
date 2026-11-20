@@ -1,0 +1,19 @@
+{
+  "indicator": "evil.example",
+  "pulse_info": {
+    "count": 5,
+    "pulses": [
+      {
+        "tags": [
+          "phishing",
+          "apt"
+        ]
+      },
+      {
+        "tags": [
+          "phishing"
+        ]
+      }
+    ]
+  }
+}

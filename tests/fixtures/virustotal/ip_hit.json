@@ -1,0 +1,17 @@
+{
+  "data": {
+    "id": "185.220.101.4",
+    "type": "ip_address",
+    "attributes": {
+      "asn": 4224,
+      "as_owner": "EXAMPLE-AS",
+      "last_analysis_stats": {
+        "malicious": 12,
+        "suspicious": 1,
+        "harmless": 60,
+        "undetected": 21,
+        "timeout": 0
+      }
+    }
+  }
+}

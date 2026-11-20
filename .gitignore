@@ -1,0 +1,13 @@
+.env
+*.db
+*.mmdb
+.codegraph/
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+src/verdikt/web_dist/
+web/node_modules/
+web/dist/
+web/test-results/
+web/playwright-report/

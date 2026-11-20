@@ -1,0 +1,12 @@
+{
+  "query_status": "ok",
+  "host": "evil.example",
+  "url_count": "1",
+  "urls_online": "0",
+  "urls": [
+    {
+      "url_status": "offline",
+      "tags": null
+    }
+  ]
+}

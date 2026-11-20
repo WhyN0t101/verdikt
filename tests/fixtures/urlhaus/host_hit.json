@@ -1,0 +1,18 @@
+{
+  "query_status": "ok",
+  "host": "evil.example",
+  "url_count": "3",
+  "urls_online": "1",
+  "urls": [
+    {
+      "url_status": "online",
+      "tags": [
+        "emotet"
+      ]
+    },
+    {
+      "url_status": "offline",
+      "tags": null
+    }
+  ]
+}
