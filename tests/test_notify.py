@@ -151,3 +151,123 @@ async def test_missing_config_is_reported(client: httpx.AsyncClient) -> None:
     out = await notify(make_report(), "slack", Settings(_env_file=None), client)  # pyright: ignore[reportCallIssue]
     assert not out.sent
     assert "not set" in out.detail
+
+
+# --- Retry-After aware delivery ------------------------------------------------------------
+
+
+@pytest.fixture
+def waits(monkeypatch: pytest.MonkeyPatch) -> list[float]:
+    """Record the pause before a retry instead of sleeping (tests never sleep)."""
+    from verdikt import notify as notify_mod
+
+    seen: list[float] = []
+
+    async def fake_sleep(seconds: float) -> None:
+        seen.append(seconds)
+
+    monkeypatch.setattr(notify_mod, "_sleep", fake_sleep)
+    return seen
+
+
+async def test_429_with_a_short_retry_after_is_retried_once_and_sent(
+    router: respx.MockRouter, client: httpx.AsyncClient, waits: list[float]
+) -> None:
+    route = router.post(HOOK).mock(
+        side_effect=[httpx.Response(429, headers={"Retry-After": "1"}), httpx.Response(200)]
+    )
+    s = Settings(_env_file=None, slack_webhook_url=HOOK)  # pyright: ignore[reportCallIssue]
+    out = await notify(make_report(), "slack", s, client)
+    assert (out.sent, out.detail) == (True, "sent")
+    assert route.call_count == 2
+    assert waits == [1.0]
+
+
+async def test_429_with_a_long_retry_after_is_reported_not_waited_on(
+    router: respx.MockRouter, client: httpx.AsyncClient, waits: list[float]
+) -> None:
+    route = router.post(HOOK).mock(return_value=httpx.Response(429, headers={"Retry-After": "120"}))
+    s = Settings(_env_file=None, slack_webhook_url=HOOK)  # pyright: ignore[reportCallIssue]
+    out = await notify(make_report(), "slack", s, client)
+    assert out.sent is False
+    assert route.call_count == 1
+    assert waits == []
+    assert "rate limit" in out.detail
+    assert "120" in out.detail  # the user learns how long the service asked for
+
+
+async def test_429_without_retry_after_is_reported_once(
+    router: respx.MockRouter, client: httpx.AsyncClient, waits: list[float]
+) -> None:
+    route = router.post(HOOK).mock(return_value=httpx.Response(429))
+    s = Settings(_env_file=None, slack_webhook_url=HOOK)  # pyright: ignore[reportCallIssue]
+    out = await notify(make_report(), "slack", s, client)
+    assert (out.sent, route.call_count, waits) == (False, 1, [])
+    assert "rate limit" in out.detail
+
+
+async def test_only_one_retry_even_if_the_second_answer_is_also_429(
+    router: respx.MockRouter, client: httpx.AsyncClient, waits: list[float]
+) -> None:
+    route = router.post(HOOK).mock(return_value=httpx.Response(429, headers={"Retry-After": "2"}))
+    s = Settings(_env_file=None, slack_webhook_url=HOOK)  # pyright: ignore[reportCallIssue]
+    out = await notify(make_report(), "slack", s, client)
+    assert out.sent is False
+    assert route.call_count == 2
+    assert waits == [2.0]
+    assert "rate limit" in out.detail
+
+
+async def test_retry_after_at_the_timeout_boundary_is_still_retried(
+    router: respx.MockRouter, client: httpx.AsyncClient, waits: list[float]
+) -> None:
+    from verdikt.notify import TIMEOUT
+
+    router.post(HOOK).mock(
+        side_effect=[
+            httpx.Response(429, headers={"Retry-After": str(int(TIMEOUT))}),
+            httpx.Response(200),
+        ]
+    )
+    s = Settings(_env_file=None, slack_webhook_url=HOOK)  # pyright: ignore[reportCallIssue]
+    assert (await notify(make_report(), "slack", s, client)).sent is True
+    assert waits == [TIMEOUT]
+
+
+async def test_other_client_errors_are_not_retried(
+    router: respx.MockRouter, client: httpx.AsyncClient, waits: list[float]
+) -> None:
+    route = router.post(HOOK).mock(return_value=httpx.Response(500, headers={"Retry-After": "1"}))
+    s = Settings(_env_file=None, slack_webhook_url=HOOK)  # pyright: ignore[reportCallIssue]
+    out = await notify(make_report(), "slack", s, client)
+    assert (out.sent, route.call_count, waits) == (False, 1, [])
+    assert "HTTP 500" in out.detail
+
+
+@pytest.mark.parametrize("platform", ["discord", "teams"])
+async def test_retry_covers_the_other_webhook_notifiers(
+    platform: str, router: respx.MockRouter, client: httpx.AsyncClient, waits: list[float]
+) -> None:
+    url = f"https://{platform}.hooks.test/abc/SECRET"
+    route = router.post(url).mock(
+        side_effect=[httpx.Response(429, headers={"Retry-After": "1"}), httpx.Response(204)]
+    )
+    s = Settings(_env_file=None, **{f"{platform}_webhook_url": url})  # pyright: ignore[reportCallIssue, reportArgumentType]
+    out = await notify(make_report(), platform, s, client)  # pyright: ignore[reportArgumentType]
+    assert out.sent is True
+    assert route.call_count == 2
+
+
+async def test_rate_limit_detail_and_logs_never_contain_the_token(
+    router: respx.MockRouter,
+    client: httpx.AsyncClient,
+    waits: list[float],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    router.post(TG_URL).mock(return_value=httpx.Response(429, headers={"Retry-After": "300"}))
+    s = Settings(_env_file=None, telegram_bot_token="tok123", telegram_chat_id="42")  # pyright: ignore[reportCallIssue]
+    out = await notify(make_report(), "telegram", s, client)
+    assert not out.sent
+    assert "rate limit" in out.detail
+    assert "tok123" not in out.detail
+    assert "tok123" not in caplog.text

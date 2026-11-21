@@ -17,6 +17,7 @@ from verdikt.cache import Cache
 from verdikt.config import Settings
 from verdikt.models import Level, Report
 from verdikt.notify.format import SEVERITY, plain_message, slack_message, telegram_message
+from verdikt.sources.base import retry_after
 
 log = logging.getLogger(__name__)
 
@@ -36,15 +37,29 @@ class NotifyOutcome:
         return self.detail.startswith(("below min", "cooldown"))
 
 
+_sleep = asyncio.sleep  # a module attribute so tests can replace the pause
+
+
 async def _post(http: httpx.AsyncClient, url: str, payload: dict[str, object]) -> str | None:
-    """POST and return an error string (never containing the URL/token) or None."""
-    try:
-        resp = await http.post(url, timeout=TIMEOUT, json=payload)
-    except httpx.HTTPError as exc:
-        return f"network error: {type(exc).__name__}"
-    if resp.status_code >= 400:
-        return f"HTTP {resp.status_code}"
-    return None
+    """POST and return an error string (never containing the URL/token) or None.
+
+    A 429 whose Retry-After fits inside the timeout is retried once; a longer one, or none,
+    is reported with what the service asked for. Nothing is ever waited on past TIMEOUT.
+    """
+    wait: float | None = None
+    for attempt in (1, 2):
+        try:
+            resp = await http.post(url, timeout=TIMEOUT, json=payload)
+        except httpx.HTTPError as exc:
+            return f"network error: {type(exc).__name__}"
+        if resp.status_code != 429:
+            return f"HTTP {resp.status_code}" if resp.status_code >= 400 else None
+        wait = retry_after(resp)
+        if attempt == 2 or wait is None or wait > TIMEOUT:
+            break
+        await _sleep(wait)
+    detail = "rate limited (HTTP 429)"
+    return f"{detail}, retry after {wait:.0f} s" if wait is not None else detail
 
 
 def _send_email(settings: Settings, report: Report) -> str | None:
