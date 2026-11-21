@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import base64
 import hashlib
-from datetime import timedelta
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import quote
 
@@ -12,6 +13,12 @@ from verdikt.jsonutil import arr, obj
 from verdikt.models import IOC, IOCType, RelatedIOC, SourceResult, Status
 from verdikt.sources.base import BaseSource, Gate, json_object
 
+
+def _clock() -> datetime:
+    return datetime.now(UTC)
+
+
+_now: Callable[[], datetime] = _clock  # a module attribute so tests can freeze it
 API = "https://www.virustotal.com/api/v3"
 GUI = "https://www.virustotal.com/gui"
 
@@ -29,6 +36,23 @@ def _paths(ioc: IOC) -> tuple[str, str]:
             return f"/urls/{url_id}", f"/url/{hashlib.sha256(v.encode()).hexdigest()}"
         case _:
             return f"/files/{v}", f"/file/{v}"
+
+
+def _plain_int(value: object) -> int | None:
+    """A JSON integer, not a bool, string or float: anything else is treated as absent."""
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _scan_age_days(value: object) -> int | None:
+    """Whole days since `last_analysis_date` (Unix seconds); never negative, None if unusable."""
+    stamp = _plain_int(value)
+    if stamp is None or stamp <= 0:
+        return None
+    try:
+        scanned = datetime.fromtimestamp(stamp, UTC)
+    except (OverflowError, OSError, ValueError):
+        return None
+    return max(0, (_now() - scanned).days)
 
 
 class VirusTotal(BaseSource):
@@ -63,16 +87,22 @@ class VirusTotal(BaseSource):
                 related.append(
                     RelatedIOC(value=str(rec["value"]), type=IOCType.IP, relation="resolves_to")
                 )
+        metrics: dict[str, int | bool] = {
+            "malicious": malicious,
+            "suspicious": suspicious,
+            "harmless": int(stats.get("harmless", 0)),
+            "undetected": int(stats.get("undetected", 0)),
+            "total": total,
+        }
+        # context for the analyst and for private rules; no default rule reads these
+        if (age := _scan_age_days(attrs.get("last_analysis_date"))) is not None:
+            metrics["last_analysis_age_days"] = age
+        if (reputation := _plain_int(attrs.get("reputation"))) is not None:
+            metrics["reputation"] = reputation
         return self.result(
             Status.OK,
             f"{malicious}/{total} engines malicious",
-            metrics={
-                "malicious": malicious,
-                "suspicious": suspicious,
-                "harmless": int(stats.get("harmless", 0)),
-                "undetected": int(stats.get("undetected", 0)),
-                "total": total,
-            },
+            metrics=metrics,
             tags=tags,
             related=related[:20],
             link=GUI + gui_path,

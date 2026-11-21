@@ -18,7 +18,8 @@
         "suspicious-udp",
         "self-signed"
       ],
-      "reputation": 18
+      "reputation": 18,
+      "last_analysis_date": 1795209759
     }
   }
 }

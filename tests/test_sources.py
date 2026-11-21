@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -493,3 +494,106 @@ async def test_real_domain_response_yields_resolved_ips(
     values = [r.value for r in result.related]
     assert values[:2] == ["172.66.147.243", "104.20.23.154"]
     assert any(":" in v for v in values)  # AAAA records too
+
+
+# --- VirusTotal scan age and reputation (metrics only, no rule) ----------------------------
+
+IP_HIT_SCAN = 1795209759  # last_analysis_date in the recorded ip_hit fixture
+
+
+@pytest.fixture
+def vt_now(monkeypatch: pytest.MonkeyPatch) -> list[datetime]:
+    """Freeze the clock the VirusTotal source uses; the list holds the current frozen time."""
+    from verdikt.sources import virustotal as vt_mod
+
+    now = [datetime.fromtimestamp(IP_HIT_SCAN, UTC) + timedelta(days=3, hours=5)]
+    monkeypatch.setattr(vt_mod, "_now", lambda: now[0])
+    return now
+
+
+async def test_virustotal_reports_scan_age_and_reputation(
+    router: respx.MockRouter, gate: Gate, vt_now: list[datetime]
+) -> None:
+    router.route().mock(return_value=httpx.Response(200, json=fixture("virustotal", "ip_hit")))
+    result = await VirusTotal("k").query(IP, gate)
+    assert result.status is Status.OK
+    assert result.metrics["last_analysis_age_days"] == 3  # 3 days 5 hours, rounded down
+    assert result.metrics["reputation"] == 18
+
+
+async def test_virustotal_scan_age_is_a_whole_number_of_days_and_never_negative(
+    router: respx.MockRouter, gate: Gate, vt_now: list[datetime]
+) -> None:
+    router.route().mock(return_value=httpx.Response(200, json=fixture("virustotal", "ip_hit")))
+    vt_now[0] = datetime.fromtimestamp(IP_HIT_SCAN, UTC) - timedelta(hours=2)  # clock skew
+    assert (await VirusTotal("k").query(IP, gate)).metrics["last_analysis_age_days"] == 0
+    vt_now[0] = datetime.fromtimestamp(IP_HIT_SCAN, UTC)
+    assert (await VirusTotal("k").query(IP, gate)).metrics["last_analysis_age_days"] == 0
+    vt_now[0] = datetime.fromtimestamp(IP_HIT_SCAN, UTC) + timedelta(days=400)
+    assert (await VirusTotal("k").query(IP, gate)).metrics["last_analysis_age_days"] == 400
+
+
+@pytest.mark.parametrize("name", ["ip_clean", "domain_hit"])
+async def test_virustotal_without_those_fields_has_no_age_or_reputation_metric(
+    name: str, router: respx.MockRouter, gate: Gate, vt_now: list[datetime]
+) -> None:
+    router.route().mock(return_value=httpx.Response(200, json=fixture("virustotal", name)))
+    target = IP if name == "ip_clean" else DOM
+    result = await VirusTotal("k").query(target, gate)
+    assert result.status is Status.OK
+    assert "last_analysis_age_days" not in result.metrics
+    assert "reputation" not in result.metrics
+    assert result.metrics["malicious"] >= 0  # the rest still works
+
+
+@pytest.mark.parametrize("bad", [None, "yesterday", "", [], {}, True, 1e30, -5, "1795209759"])
+async def test_virustotal_ignores_garbage_scan_dates_and_reputation(
+    bad: object, router: respx.MockRouter, gate: Gate, vt_now: list[datetime]
+) -> None:
+    body = fixture("virustotal", "ip_hit")
+    body["data"]["attributes"]["last_analysis_date"] = bad
+    body["data"]["attributes"]["reputation"] = bad
+    router.route().mock(return_value=httpx.Response(200, json=body))
+    result = await VirusTotal("k").query(IP, gate)
+    assert result.status is Status.OK  # never an ERROR because of an odd optional field
+    assert isinstance(result.metrics.get("malicious"), int)
+
+
+async def test_virustotal_negative_reputation_is_kept(
+    router: respx.MockRouter, gate: Gate, vt_now: list[datetime]
+) -> None:
+    body = fixture("virustotal", "ip_hit")
+    body["data"]["attributes"]["reputation"] = -42
+    router.route().mock(return_value=httpx.Response(200, json=body))
+    assert (await VirusTotal("k").query(IP, gate)).metrics["reputation"] == -42
+
+
+def test_scan_age_and_reputation_do_not_change_any_verdict() -> None:
+    from verdikt.config import load_rules
+    from verdikt.models import SourceResult
+    from verdikt.verdict import decide
+
+    rules = load_rules()
+    for age, rep in ((0, 0), (9999, -500), (1, 100_000)):
+        rows = [
+            SourceResult(
+                source="virustotal",
+                status=Status.OK,
+                metrics={
+                    "malicious": 0,
+                    "suspicious": 0,
+                    "last_analysis_age_days": age,
+                    "reputation": rep,
+                },
+            ),
+            SourceResult(source="abuseipdb", status=Status.OK, metrics={"score": 0}),
+        ]
+        assert decide(rows, rules).level.value == "safe"
+    old_but_clearly_bad = SourceResult(
+        source="virustotal",
+        status=Status.OK,
+        metrics={"malicious": 50, "last_analysis_age_days": 9999},
+    )
+    assert (
+        decide([old_but_clearly_bad], rules).level.value == "malicious"
+    )  # an old scan still counts
