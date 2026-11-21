@@ -5,7 +5,7 @@ Two references, kept locally in `docs/design/` (git-ignored, not in the repo):
 - `ref-palette.webp`: **colours and texture.** Use this palette.
 - `ref-layout.webp`: **layout and density idea.** Borrow the structure, not the colours.
 
-Hex values below are estimated from the images. Tune them with the `frontend-design` skill and check contrast (≥ 4.5:1 for text) before locking them in `web/src/styles/tokens.css`.
+`web/src/styles/tokens.css` is authoritative for colours. The hex values below are the estimates the palette started from; where the two differ, the file wins. Text contrast stays ≥ 4.5:1.
 
 **Skills:** invoke `frontend-design` before any UI work (M5–M7). Invoke `dataviz` before building the map, graph, timeline or any chart.
 
@@ -78,7 +78,8 @@ What it shows: dark "mission control" app. Top bar with breadcrumb (`Nexus Core 
 
   Level is always text + icon too, never colour alone.
 - **Type:** Familjen Grotesk for UI and wordmark; Martian Mono for IOCs, labels, logs, numbers (both via `@fontsource-variable`, OFL).
-- **Surfaces:** flat neutral black and white, no tinted panels or gradients; violet only as the accent. Labels: uppercase, 11–12 px, letter-spacing ~0.08em.
+- **Surfaces:** flat neutral black and white, no tinted panels or gradients; violet only as the accent. The one gradient is the globe on the empty state (`.sphere` in `web/src/styles/index.css`). Section headings are sentence case, semibold; the uppercase mono `.label` (11–12 px, letter-spacing ~0.08em) stays for small data tags such as the IOC type.
+- **Shell:** one header holds the logo, the view switcher (Check, Overview, Batch, Cases), the command bar, readouts and the theme toggle. The switcher and the Map/Graph/Raw JSON tabs are the same `Segmented` component in `web/src/components/ui/index.tsx`.
 - **Density:** compact like the layout reference; hairline dividers, no heavy cards or shadows.
 - **Motion:** pixel-dissolve on results, reticle pulse on the active IOC, streaming log lines. All disabled under `prefers-reduced-motion`.
 
@@ -86,20 +87,18 @@ What it shows: dark "mission control" app. Top bar with breadcrumb (`Nexus Core 
 
 ## 4. Map decision
 
-The **dot-matrix world map** fits both references and removes the map-tile privacy leak entirely:
+The **dot-matrix world map** (shipped) fits both references and removes the map-tile privacy leak entirely:
 
 - Land is a precomputed grid of dots (from Natural Earth land polygons, built once into a small static JSON shipped with the app).
-- Rendered with canvas/SVG or MapLibre with no remote tiles.
-- No network requests for the map, so the country-zoom cap in `PLAN.md` is no longer needed for privacy.
+- Rendered as one SVG path in `web/src/components/MapView.tsx`. There are no tiles and no zoom.
+- The map makes no network request, so what you investigate is never revealed through map traffic.
 - Markers: glowing dots in the level colour; arcs as thin violet leader lines with numbered callout boxes (palette reference motif).
-
-This replaces the OpenFreeMap basemap in `PLAN.md` once confirmed during M6.
 
 ---
 
-## 5. Open points for the `frontend-design` pass
+## 5. Resolved design points
 
-- Final hex values and contrast check for both modes.
-- Font choice (Geist vs Inter) and licensing.
-- Whether the 3D point-cloud look (layout reference) is worth it for the globe, or a flat dot-matrix map is enough.
-- Empty state: gradient sphere + `01–04` pipeline boxes.
+- Colours: `web/src/styles/tokens.css` is the source, with a light and a dark theme.
+- Fonts: Familjen Grotesk for the UI and Martian Mono for IOCs, labels, logs and numbers.
+- Map: a flat dot-matrix map, not a 3D point cloud.
+- Empty state: gradient sphere and the `01–04` pipeline boxes joined by leader lines.
