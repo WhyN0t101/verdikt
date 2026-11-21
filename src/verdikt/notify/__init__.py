@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import smtplib
 import ssl
 from dataclasses import dataclass
@@ -15,9 +16,10 @@ import httpx
 
 from verdikt.cache import Cache
 from verdikt.config import Settings
+from verdikt.httputil import retry_after
+from verdikt.jsonutil import obj
 from verdikt.models import Level, Report
 from verdikt.notify.format import SEVERITY, plain_message, slack_message, telegram_message
-from verdikt.sources.base import retry_after
 
 log = logging.getLogger(__name__)
 
@@ -40,12 +42,30 @@ class NotifyOutcome:
 _sleep = asyncio.sleep  # a module attribute so tests can replace the pause
 
 
+def _body_wait(resp: httpx.Response) -> float | None:
+    """The wait a service puts in its JSON body: Discord `retry_after`, Telegram
+    `parameters.retry_after`. Numbers only: nothing else from the body is read or echoed."""
+    try:
+        data: object = resp.json()
+    except ValueError:
+        return None
+    top = obj(data)
+    for node in (top, obj(top.get("parameters"))):
+        value = node.get("retry_after")
+        if isinstance(value, int | float) and not isinstance(value, bool):
+            if math.isfinite(value) and value >= 0:
+                return float(value)
+    return None
+
+
 async def _post(http: httpx.AsyncClient, url: str, payload: dict[str, object]) -> str | None:
     """POST and return an error string (never containing the URL/token) or None.
 
-    A 429 whose Retry-After fits inside the timeout is retried once; a longer one, or none,
-    is reported with what the service asked for. Nothing is ever waited on past TIMEOUT.
+    A 429 whose wait (Retry-After header, else the JSON body) fits inside the timeout is
+    retried once; a longer or missing wait is reported with what the service asked for.
     """
+    # shortcut: one retry, up to TIMEOUT seconds per alert, alerts sent one after another;
+    # move to a queue if bulk alerting becomes normal
     wait: float | None = None
     for attempt in (1, 2):
         try:
@@ -55,11 +75,13 @@ async def _post(http: httpx.AsyncClient, url: str, payload: dict[str, object]) -
         if resp.status_code != 429:
             return f"HTTP {resp.status_code}" if resp.status_code >= 400 else None
         wait = retry_after(resp)
+        if wait is None:
+            wait = _body_wait(resp)
         if attempt == 2 or wait is None or wait > TIMEOUT:
             break
         await _sleep(wait)
     detail = "rate limited (HTTP 429)"
-    return f"{detail}, retry after {wait:.0f} s" if wait is not None else detail
+    return f"{detail}, retry after {wait:g} s" if wait is not None else detail
 
 
 def _send_email(settings: Settings, report: Report) -> str | None:

@@ -183,29 +183,6 @@ async def test_429_with_a_short_retry_after_is_retried_once_and_sent(
     assert waits == [1.0]
 
 
-async def test_429_with_a_long_retry_after_is_reported_not_waited_on(
-    router: respx.MockRouter, client: httpx.AsyncClient, waits: list[float]
-) -> None:
-    route = router.post(HOOK).mock(return_value=httpx.Response(429, headers={"Retry-After": "120"}))
-    s = Settings(_env_file=None, slack_webhook_url=HOOK)  # pyright: ignore[reportCallIssue]
-    out = await notify(make_report(), "slack", s, client)
-    assert out.sent is False
-    assert route.call_count == 1
-    assert waits == []
-    assert "rate limit" in out.detail
-    assert "120" in out.detail  # the user learns how long the service asked for
-
-
-async def test_429_without_retry_after_is_reported_once(
-    router: respx.MockRouter, client: httpx.AsyncClient, waits: list[float]
-) -> None:
-    route = router.post(HOOK).mock(return_value=httpx.Response(429))
-    s = Settings(_env_file=None, slack_webhook_url=HOOK)  # pyright: ignore[reportCallIssue]
-    out = await notify(make_report(), "slack", s, client)
-    assert (out.sent, route.call_count, waits) == (False, 1, [])
-    assert "rate limit" in out.detail
-
-
 async def test_only_one_retry_even_if_the_second_answer_is_also_429(
     router: respx.MockRouter, client: httpx.AsyncClient, waits: list[float]
 ) -> None:
@@ -232,16 +209,6 @@ async def test_retry_after_at_the_timeout_boundary_is_still_retried(
     s = Settings(_env_file=None, slack_webhook_url=HOOK)  # pyright: ignore[reportCallIssue]
     assert (await notify(make_report(), "slack", s, client)).sent is True
     assert waits == [TIMEOUT]
-
-
-async def test_other_client_errors_are_not_retried(
-    router: respx.MockRouter, client: httpx.AsyncClient, waits: list[float]
-) -> None:
-    route = router.post(HOOK).mock(return_value=httpx.Response(500, headers={"Retry-After": "1"}))
-    s = Settings(_env_file=None, slack_webhook_url=HOOK)  # pyright: ignore[reportCallIssue]
-    out = await notify(make_report(), "slack", s, client)
-    assert (out.sent, route.call_count, waits) == (False, 1, [])
-    assert "HTTP 500" in out.detail
 
 
 @pytest.mark.parametrize("platform", ["discord", "teams"])
@@ -271,3 +238,149 @@ async def test_rate_limit_detail_and_logs_never_contain_the_token(
     assert "rate limit" in out.detail
     assert "tok123" not in out.detail
     assert "tok123" not in caplog.text
+
+
+# --- reported once, never waited on (long, missing, invalid or unusable waits; other errors) ----
+
+
+@pytest.mark.parametrize(
+    ("status", "headers", "body", "detail_has", "detail_lacks"),
+    [
+        pytest.param(429, {"Retry-After": "120"}, None, "retry after 120 s", "", id="long header"),
+        pytest.param(429, {}, None, "rate limited", "retry after", id="no header"),
+        pytest.param(429, {"Retry-After": "nan"}, None, "rate limited", "nan", id="nan header"),
+        pytest.param(429, {"Retry-After": "-5"}, None, "rate limited", "-5", id="negative header"),
+        pytest.param(429, {"Retry-After": "inf"}, None, "rate limited", "inf", id="inf header"),
+        pytest.param(429, {"Retry-After": "abc"}, None, "rate limited", "abc", id="junk header"),
+        pytest.param(
+            500, {"Retry-After": "1"}, None, "HTTP 500", "rate limited", id="5xx is not retried"
+        ),
+        pytest.param(429, {}, {"retry_after": True}, "rate limited", "True", id="body: bool"),
+        pytest.param(429, {}, {"retry_after": "x"}, "rate limited", "retry after", id="body: text"),
+        pytest.param(429, {}, {"retry_after": -3}, "rate limited", "-3", id="body: negative"),
+        pytest.param(
+            429,
+            {},
+            {"parameters": {"retry_after": [1]}},
+            "rate limited",
+            "retry after",
+            id="body: list",
+        ),
+        pytest.param(429, {}, {"retry_after": 300}, "retry after 300 s", "", id="body: too long"),
+        pytest.param(
+            429, {}, ["retry_after", 1], "rate limited", "retry after", id="body: not an object"
+        ),
+    ],
+)
+async def test_reported_once_and_never_waited_on(
+    status: int,
+    headers: dict[str, str],
+    body: object,
+    detail_has: str,
+    detail_lacks: str,
+    router: respx.MockRouter,
+    client: httpx.AsyncClient,
+    waits: list[float],
+) -> None:
+    response = (
+        httpx.Response(status, headers=headers, json=body)
+        if body is not None
+        else httpx.Response(status, headers=headers)
+    )
+    route = router.post(HOOK).mock(return_value=response)
+    s = Settings(_env_file=None, slack_webhook_url=HOOK)  # pyright: ignore[reportCallIssue]
+    out = await notify(make_report(), "slack", s, client)
+    assert out.sent is False
+    assert (route.call_count, waits) == (1, [])
+    assert detail_has in out.detail
+    assert not detail_lacks or detail_lacks not in out.detail
+
+
+async def test_a_nan_in_a_json_body_is_not_a_wait(
+    router: respx.MockRouter, client: httpx.AsyncClient, waits: list[float]
+) -> None:
+    route = router.post(HOOK).mock(
+        return_value=httpx.Response(429, content=b'{"retry_after": NaN}')
+    )
+    s = Settings(_env_file=None, slack_webhook_url=HOOK)  # pyright: ignore[reportCallIssue]
+    out = await notify(make_report(), "slack", s, client)
+    assert (out.sent, route.call_count, waits) == (False, 1, [])
+    assert "nan" not in out.detail.lower()
+
+
+# --- the wait Telegram and Discord put in the JSON body ------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("platform", "body", "expected_wait"),
+    [
+        pytest.param(
+            "telegram",
+            {"ok": False, "error_code": 429, "parameters": {"retry_after": 1}},
+            1.0,
+            id="telegram",
+        ),
+        pytest.param(
+            "discord",
+            {"message": "You are being rate limited.", "retry_after": 1.5, "global": False},
+            1.5,
+            id="discord",
+        ),
+    ],
+)
+async def test_the_wait_in_the_body_is_used_when_there_is_no_header(
+    platform: str,
+    body: dict[str, object],
+    expected_wait: float,
+    router: respx.MockRouter,
+    client: httpx.AsyncClient,
+    waits: list[float],
+) -> None:
+    url = TG_URL if platform == "telegram" else "https://discord.hooks.test/abc/SECRET"
+    route = router.post(url).mock(side_effect=[httpx.Response(429, json=body), httpx.Response(200)])
+    if platform == "telegram":
+        s = Settings(_env_file=None, telegram_bot_token="tok123", telegram_chat_id="42")  # pyright: ignore[reportCallIssue]
+    else:
+        s = Settings(_env_file=None, discord_webhook_url=url)  # pyright: ignore[reportCallIssue]
+    out = await notify(make_report(), platform, s, client)  # pyright: ignore[reportArgumentType]
+    assert (out.sent, route.call_count, waits) == (True, 2, [expected_wait])
+
+
+async def test_the_header_wins_over_the_body(
+    router: respx.MockRouter, client: httpx.AsyncClient, waits: list[float]
+) -> None:
+    route = router.post(HOOK).mock(
+        side_effect=[
+            httpx.Response(429, headers={"Retry-After": "2"}, json={"retry_after": 9}),
+            httpx.Response(200),
+        ]
+    )
+    s = Settings(_env_file=None, slack_webhook_url=HOOK)  # pyright: ignore[reportCallIssue]
+    assert (await notify(make_report(), "slack", s, client)).sent is True
+    assert (route.call_count, waits) == (2, [2.0])
+
+
+async def test_body_text_is_never_echoed_into_the_detail_or_the_log(
+    router: respx.MockRouter,
+    client: httpx.AsyncClient,
+    waits: list[float],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    body = {"description": "leaked tok123 and https://evil.test/x", "retry_after": 300}
+    router.post(TG_URL).mock(return_value=httpx.Response(429, json=body))
+    s = Settings(_env_file=None, telegram_bot_token="tok123", telegram_chat_id="42")  # pyright: ignore[reportCallIssue]
+    out = await notify(make_report(), "telegram", s, client)
+    assert "retry after 300 s" in out.detail  # numbers only
+    for text in (out.detail, caplog.text):
+        assert "tok123" not in text
+        assert "evil.test" not in text
+        assert "leaked" not in text
+
+
+def test_alert_delivery_does_not_depend_on_the_source_layer() -> None:
+    from pathlib import Path
+
+    import verdikt.notify as pkg
+
+    for f in Path(pkg.__file__).parent.glob("*.py"):
+        assert "verdikt.sources" not in f.read_text(encoding="utf-8"), f.name

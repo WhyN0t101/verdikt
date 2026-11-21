@@ -5,8 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime, timedelta
-from email.utils import parsedate_to_datetime
+from datetime import timedelta
 from types import TracebackType
 from typing import Any, Protocol
 
@@ -15,6 +14,7 @@ from pydantic import HttpUrl, TypeAdapter, ValidationError
 from tenacity import AsyncRetrying, RetryCallState, retry_if_result, stop_after_attempt
 
 from verdikt.cache import Cache
+from verdikt.httputil import retry_after
 from verdikt.models import IOC, IOCType, SourceResult, Status
 
 log = logging.getLogger(__name__)
@@ -37,23 +37,6 @@ class Limiter(Protocol):
         exc: BaseException | None,
         tb: TracebackType | None,
     ) -> Any: ...
-
-
-def retry_after(resp: httpx.Response) -> float | None:
-    value = resp.headers.get("retry-after")
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except ValueError:
-        pass
-    try:  # HTTP-date form
-        when = parsedate_to_datetime(value)
-    except (TypeError, ValueError):
-        return None
-    if when.tzinfo is None:
-        when = when.replace(tzinfo=UTC)
-    return max(0.0, (when - datetime.now(UTC)).total_seconds())
 
 
 class Gate:
