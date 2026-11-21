@@ -8,12 +8,16 @@ from email.utils import parsedate_to_datetime
 
 import httpx
 
+MAX_WAIT = (
+    86_400.0  # a day: far above any timeout, so callers treat it as "too long", never as "none"
+)
+
 
 def retry_after(resp: httpx.Response) -> float | None:
     """Seconds to wait from a `Retry-After` header (seconds or HTTP date), or None.
 
-    A value that is not a finite, non-negative wait (`nan`, `inf`, `-5`, junk) is treated as
-    absent, so callers never sleep on it or print it.
+    `nan`, a negative number or junk is treated as absent. An enormous value (`inf`, `1e999`) is a
+    real request to wait a long time, so it is clamped to `MAX_WAIT` rather than dropped.
     """
     value = resp.headers.get("retry-after")
     if value is None:
@@ -29,4 +33,4 @@ def retry_after(resp: httpx.Response) -> float | None:
             when = when.replace(tzinfo=UTC)
         seconds = (when - datetime.now(UTC)).total_seconds()
         seconds = max(0.0, seconds)
-    return seconds if math.isfinite(seconds) and seconds >= 0 else None
+    return None if math.isnan(seconds) or seconds < 0 else min(seconds, MAX_WAIT)

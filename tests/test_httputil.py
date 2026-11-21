@@ -8,7 +8,7 @@ from email.utils import format_datetime
 import httpx
 import pytest
 
-from verdikt.httputil import retry_after
+from verdikt.httputil import MAX_WAIT, retry_after
 
 
 def resp(value: str | None) -> httpx.Response:
@@ -23,9 +23,7 @@ def test_seconds(header: str, want: float) -> None:
     assert retry_after(resp(header)) == want
 
 
-@pytest.mark.parametrize(
-    "header", [None, "", "abc", "nan", "NaN", "inf", "-inf", "-5", "-0.5", "1e999"]
-)
+@pytest.mark.parametrize("header", [None, "", "abc", "nan", "NaN", "-inf", "-5", "-0.5"])
 def test_unusable_values_are_no_wait_at_all(header: str | None) -> None:
     assert retry_after(resp(header)) is None
 
@@ -35,3 +33,9 @@ def test_http_date_in_the_future_and_in_the_past() -> None:
     assert 80 <= (retry_after(resp(future)) or 0) <= 90
     past = format_datetime(datetime.now(UTC) - timedelta(hours=1), usegmt=True)
     assert retry_after(resp(past)) == 0.0
+
+
+@pytest.mark.parametrize("header", ["inf", "Infinity", "1e999", "999999999"])
+def test_a_huge_wait_is_clamped_not_dropped(header: str) -> None:
+    # "wait forever" must stay a long wait, or callers would read it as "no Retry-After" and retry
+    assert retry_after(resp(header)) == MAX_WAIT

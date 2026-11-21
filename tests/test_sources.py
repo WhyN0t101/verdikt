@@ -341,6 +341,22 @@ async def test_urlhaus_rejected_input_is_error_not_clean(
 
 
 @pytest.mark.parametrize(("source", "ioc"), ALL, ids=IDS)
+@pytest.mark.parametrize("header", ["inf", "1e999"])
+async def test_429_with_an_infinite_retry_after_is_rate_limited_without_retrying(
+    header: str,
+    source: BaseSource,
+    ioc: IOC,
+    router: respx.MockRouter,
+    gate: Gate,
+    sleeps: Sleeps,
+) -> None:
+    route = router.route().mock(return_value=httpx.Response(429, headers={"Retry-After": header}))
+    result = await source.query(ioc, gate)
+    assert result.status is Status.RATE_LIMITED
+    assert (route.call_count, sleeps.calls) == (1, [])
+
+
+@pytest.mark.parametrize(("source", "ioc"), ALL, ids=IDS)
 async def test_429_with_long_retry_after_is_rate_limited_without_waiting(
     source: BaseSource, ioc: IOC, router: respx.MockRouter, gate: Gate, sleeps: Sleeps
 ) -> None:

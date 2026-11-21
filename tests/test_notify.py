@@ -250,7 +250,9 @@ async def test_rate_limit_detail_and_logs_never_contain_the_token(
         pytest.param(429, {}, None, "rate limited", "retry after", id="no header"),
         pytest.param(429, {"Retry-After": "nan"}, None, "rate limited", "nan", id="nan header"),
         pytest.param(429, {"Retry-After": "-5"}, None, "rate limited", "-5", id="negative header"),
-        pytest.param(429, {"Retry-After": "inf"}, None, "rate limited", "inf", id="inf header"),
+        pytest.param(
+            429, {"Retry-After": "inf"}, None, "retry after 86400 s", "inf", id="inf header"
+        ),
         pytest.param(429, {"Retry-After": "abc"}, None, "rate limited", "abc", id="junk header"),
         pytest.param(
             500, {"Retry-After": "1"}, None, "HTTP 500", "rate limited", id="5xx is not retried"
