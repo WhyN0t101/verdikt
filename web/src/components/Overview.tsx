@@ -31,6 +31,9 @@ export function Overview({ onCheck }: { onCheck: (ioc: string) => void }) {
   });
   const watchJob = sched.data?.find((j) => j.name === "watch");
   const watchRunning = watchJob?.running ?? false;
+  // progress arrives as "3/50"; empty until the first entry finishes
+  const [done, total] = (watchJob?.progress ?? "").split("/").map(Number);
+  const watchPct = done !== undefined && total ? Math.min(100, Math.round((done / total) * 100)) : 0;
   const wasRunning = useRef(false);
   useEffect(() => {
     if (wasRunning.current && !watchRunning) {
@@ -134,6 +137,18 @@ export function Overview({ onCheck }: { onCheck: (ioc: string) => void }) {
             {!watchRunning && !recheck.isSuccess && !recheck.isError && "A re-check skips the cache and uses source quota."}
           </span>
         </div>
+        {watchRunning && (
+          <div
+            role="progressbar"
+            aria-label="Re-check progress"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={watchPct}
+            className="mb-3 h-1.5 border border-line-strong"
+          >
+            <div className="hatch h-full text-accent-text" style={{ width: `${watchPct}%` }} />
+          </div>
+        )}
         {watch.data && watch.data.entries.length === 0 && <p className="text-sm text-muted">Nothing watched yet. Open a report and choose Watch.</p>}
         <ul>
           {watch.data?.entries.map((e) => (

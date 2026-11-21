@@ -221,8 +221,8 @@ test("batch: paste a ticket, extract, check all, skip internal targets, export C
 
   await results.getByRole("button", { name: /Check all 3/ }).click();
   await expect(results).toContainText("3 checked", { timeout: 15_000 });
-  await expect(results.getByRole("row", { name: new RegExp(BAD_IP.replaceAll(".", "\.")) })).toContainText("Malicious");
-  await expect(results.getByRole("row", { name: new RegExp(GOOD_IP.replaceAll(".", "\.")) })).toContainText("Safe");
+  await expect(results.getByRole("row", { name: new RegExp(BAD_IP.replaceAll(".", "\\.")) })).toContainText("Malicious");
+  await expect(results.getByRole("row", { name: new RegExp(GOOD_IP.replaceAll(".", "\\.")) })).toContainText("Safe");
 
   const download = page.waitForEvent("download");
   await results.getByRole("button", { name: "Export CSV" }).click();
