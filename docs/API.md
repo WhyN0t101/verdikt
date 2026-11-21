@@ -19,8 +19,9 @@ Responses also carry a strict `Content-Security-Policy` (scripts and connections
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/api/check` | Body `{"ioc": "...", "no_cache": false}`; returns a `Report` (vendor `raw` stripped) |
-| GET | `/api/reports?limit=50&offset=0` | History list, newest first (`limit` 1 to 200) |
+| GET | `/api/reports?limit=50&offset=0&q=&level=&type=` | History list, newest first (`limit` 1 to 200). `q` is a literal, case-insensitive substring of the indicator (up to 200 characters; `%` and `_` match themselves). `level` is `malicious`, `suspicious`, `safe` or `unknown`; `type` is `ip`, `domain`, `url`, `md5`, `sha1` or `sha256`. Anything else is `422`. Same row shape as before; there is no total count, so a full page means there may be more |
 | GET | `/api/reports/{id}?raw=false` | One stored report; `raw=true` keeps vendor raw responses |
+| GET | `/api/reports/{id}/diff?against=` | What changed since another report: verdict, counts, each source that moved (status, level, summary, changed metrics) and reasons added or removed. Without `against`, the newest earlier report of the same indicator; `previous_id` is `null` when there is none. `404` for an unknown id. Never includes `raw`; text is capped at 300 characters and stripped of control and bidi characters. `no_answer` is true when the new row is an error or rate limit, so it is never a clean result |
 | GET | `/api/reports/{id}/stix` | The report as a STIX 2.1 bundle (`Content-Type: application/stix+json`) |
 | POST | `/api/reports/{id}/feedback` | Body `{"label": "false_positive" \| "false_negative" \| "correct", "note": ""}` (note up to 500 characters); returns the stored entry |
 | GET | `/api/feedback` | Stored feedback, newest first |
@@ -36,7 +37,7 @@ Responses also carry a strict `Content-Security-Policy` (scripts and connections
 | POST | `/api/scheduler/{name}/run` | Run a job now and wait for it to finish |
 | POST, DELETE | `/api/feeds/import` | POST `{name, content, all_attributes?}` imports a MISP event or STIX bundle as a local list; DELETE `?name=` removes it |
 | GET | `/api/stats?days=30` | Dashboard data: checks per day by level, per-source health, recurring indicators, feedback counts (`days` 1 to 90) |
-| GET | `/api/watchlist` | Watched entries and the latest verdict changes |
+| GET | `/api/watchlist` | Watched entries, the latest verdict changes and `max_entries` (the cap, 50) |
 | POST | `/api/watchlist` | Body `{"report_id": "..."}`: watch that report's indicator, using it as the baseline. `409` when the list (50) is full |
 | DELETE | `/api/watchlist?ioc=...` | Stop watching an indicator |
 | POST | `/api/watchlist/recheck` | Re-check every entry without the cache; returns the verdict changes |

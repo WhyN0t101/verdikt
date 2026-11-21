@@ -214,6 +214,7 @@ CIRCL hashlookup (an API, no key) answers whether a file hash is in known-file s
 The **Overview** page shows checks per day by verdict, source health (answer rate, errors, rate limits, cache hits, average latency over live calls), recurring infrastructure from the "seen before" index, verdict feedback counts, the watchlist and the status of the local feeds.
 
 - **Watchlist:** choose "Watch" on a report (or `verdikt watch add <ioc>`). "Re-check all" and `verdikt watch run` check every entry again **without the cache**, so they spend source quota, record any verdict change, and with `--notify` send the changed ones to any of the five notifiers. `verdikt ui` can run the re-check on a schedule (see below); when the UI is not running, use cron or Task Scheduler with `verdikt watch run`. While a re-check runs, the Overview page shows a progress bar (for example `3/50`); it is indeterminate until the first entry finishes. The list is capped at 50 entries.
+- **History and changes:** `GET /api/reports` takes `q`, `level` and `type` to search the stored reports, and `GET /api/reports/{id}/diff` shows what changed against the previous report of the same indicator (see `docs/API.md`).
 - **Batch:** paste a ticket, an email or a list on the **Batch** page. Indicators are found (defanged ones too), normalized and deduplicated; internal targets are listed as skipped and never looked up. "Check all" runs them one at a time and the table can be exported as CSV. The same from the shell: `verdikt extract ticket.txt` lists the indicators, and `verdikt bulk ticket.txt --text --csv > results.csv` checks them (`--resume` skips anything checked in the last 24 hours). CSV cells that start with `=`, `+`, `-` or `@` get a leading apostrophe so a spreadsheet cannot run them as formulas.
 
 ## Investigations, exports and the scheduler
@@ -280,6 +281,7 @@ src/verdikt/
   watch.py         watchlist re-checks
   audit.py         JSON-lines audit log
   stix.py          STIX 2.1 export
+  diff.py          pure diff of two stored reports
   misp.py          MISP event export
   export.py        Markdown and HTML report and case exports
   scheduler.py     background watchlist and feed jobs inside `verdikt ui`

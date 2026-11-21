@@ -111,6 +111,7 @@ verdikt/
 │   ├── watch.py                 # watchlist re-checks (4 at a time, errors are not changes)
 │   ├── scheduler.py             # in-process jobs for verdikt ui (watch, feeds), off by default
 │   ├── audit.py                 # JSON-lines audit log, rotates at 10 MB
+│   ├── diff.py                  # pure diff of two stored reports (no I/O)
 │   ├── stix.py  misp.py         # STIX 2.1 bundle and MISP event export
 │   ├── export.py                # Markdown / HTML report and case export
 │   ├── jsonutil.py              # typed accessors for untyped vendor JSON
@@ -385,8 +386,9 @@ Exit codes (kept off 1 and 2, which Python crashes and Click usage errors alread
 | Method | Path | Purpose |
 |---|---|---|
 | POST | `/api/check` | Body `{ioc, no_cache}` → `Report` |
-| GET | `/api/reports` | History list (paged) |
+| GET | `/api/reports` | History list, newest first. Optional `q` (literal substring of the indicator, up to 200 characters), `level`, `type`, `limit`, `offset` |
 | GET | `/api/reports/{report_id}` | One stored report (`?raw=true` keeps vendor payloads) |
+| GET | `/api/reports/{report_id}/diff` | What changed against `?against=<report_id>`, else the newest earlier report of the same indicator (`previous_id: null` when there is none). No `raw`; text capped and stripped of control and bidi characters; `no_answer` marks an error or rate limit |
 | GET | `/api/reports/{report_id}/stix` | The report as a STIX 2.1 bundle (`application/stix+json`) |
 | GET | `/api/reports/{report_id}/misp` | The report as a MISP event JSON |
 | GET | `/api/reports/{report_id}/export` | `?format=md\|html`: shareable, defanged, escaped document |
@@ -395,7 +397,7 @@ Exit codes (kept off 1 and 2, which Python crashes and Click usage errors alread
 | GET | `/api/sources` | Source status, quota left |
 | GET | `/api/health` | Liveness |
 | GET | `/api/stats` | Dashboard data: checks per day, source health, recurring infrastructure, feedback counts |
-| GET, POST, DELETE | `/api/watchlist` | List with recent changes; watch a report's indicator (`{report_id}`); stop watching (`?ioc=`) |
+| GET, POST, DELETE | `/api/watchlist` | List with recent changes and the cap (`max_entries`); watch a report's indicator (`{report_id}`); stop watching (`?ioc=`) |
 | POST | `/api/watchlist/recheck` | Re-check every entry now (bypasses the cache); returns the verdict changes |
 | GET | `/api/feeds` | Downloaded and imported feeds with entry counts |
 | POST | `/api/feeds/update` | Download the feeds |
