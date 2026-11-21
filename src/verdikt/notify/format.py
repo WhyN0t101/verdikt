@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import html
-import re
 from collections.abc import Callable
 
 from verdikt.models import Level, Report, SourceResult, Status
@@ -29,16 +28,18 @@ def defang(value: str) -> str:
     return out
 
 
-# a URL, a dotted name ending in letters, or an IPv4: the tokens that could become live links
-_LINKISH = re.compile(r"^[a-z][a-z0-9+.-]*://|[\w-]+\.[a-z]{2,}|^\d{1,3}(\.\d{1,3}){3}", re.I)
-
-
 def _feed_text(text: str) -> str:
-    """Feed-derived text: one line (no faked extra rows), link-like tokens defanged.
+    """Feed-derived text: one line (no faked extra rows) and defanged (no live links).
 
-    Plain numbers such as `1.5` stay readable; only tokens that could auto-link are defanged.
+    Every dot is defanged: a heuristic for "link-like" tokens misses IPv6, Unicode hosts and
+    odd spellings, and a missed token becomes a live link.
     """
-    return " ".join(defang(t) if _LINKISH.search(t) else t for t in text.split())
+    return defang(" ".join(text.split()))
+
+
+def _plain_escape(text: str) -> str:
+    """Discord and Teams render markdown: parentheses would complete a `[text](url)` link."""
+    return text.replace("(", "{").replace(")", "}")
 
 
 def _hit_line(row: SourceResult, escape: Callable[[str], str]) -> str:
@@ -81,7 +82,7 @@ def plain_message(report: Report) -> str:
     """Markup-free text for email, Teams and Discord. Feed text is defanged and single-line."""
     head, ioc = _header(report)
     lines = [f"{head} {ioc} ({report.ioc_type.value})"]
-    lines += [_hit_line(r, lambda t: t) for r in hit_rows(report)]
+    lines += [_hit_line(r, _plain_escape) for r in hit_rows(report)]
     if link := _link(report):
         lines.append(f"Report: {link}")
     return "\n".join(lines)

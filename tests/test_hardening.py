@@ -285,3 +285,12 @@ async def test_cooldown_skips_a_repeat_of_the_same_level(client: httpx.AsyncClie
         )
     assert (first.sent, again.sent, again.quiet, other.sent) == (True, False, True, True)
     assert route.call_count == 2
+
+
+def test_feed_text_is_fully_defanged_and_cannot_form_markdown_links() -> None:
+    from verdikt.notify.format import plain_message
+
+    report = make_report(tags=["[click](http://evil.com)", "2001:db8::1", "bücher.example"])
+    msg = plain_message(report)
+    assert "evil.com" not in msg and "](" not in msg
+    assert "bücher[.]example" in msg
