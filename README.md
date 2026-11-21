@@ -2,7 +2,7 @@
 
 # verdikt
 
-verdikt triages indicators of compromise (IOCs). Give it an IP address, domain, URL or file hash. It queries several threat-intelligence sources in parallel, applies a small set of rules, and returns one verdict: malicious, suspicious, safe or unknown. It can post the result to Slack or Telegram, and it ships a local browser UI with a map and a relationship graph.
+verdikt triages indicators of compromise (IOCs). Give it an IP address, domain, URL or file hash. It queries several threat-intelligence sources in parallel, applies a small set of rules, and returns one verdict: malicious, suspicious, safe or unknown. It can post the result to Slack, Telegram, Discord, Microsoft Teams or email, and it ships a local browser UI with a map and a relationship graph.
 
 The core is a Python library that returns a single `Report` model. The CLI, the HTTP API, the UI and the SOAR integrations only consume that model; nothing outside `src/verdikt/sources/` talks to a threat-intelligence API.
 
@@ -14,6 +14,7 @@ The core is a Python library that returns a single `Report` model. The CLI, the 
 | `docs/API.md` | HTTP API reference and the security model |
 | `docs/INTEGRATIONS.md` | Cortex analyzer, Shuffle app, scripting with exit codes |
 | `docs/DESIGN.md` | UI visual direction |
+| `docs/CODE_QUALITY.md` | Checklist for code audits: dead code, duplicates, performance, best practices |
 
 ## Contents
 
@@ -33,6 +34,7 @@ The core is a Python library that returns a single `Report` model. The CLI, the 
 - [Caching, rate limits and daily budgets](#caching-rate-limits-and-daily-budgets)
 - [Development](#development)
 - [Project layout](#project-layout)
+- [Checking your setup](#checking-your-setup)
 - [Troubleshooting](#troubleshooting)
 - [Licensing notes](#licensing-notes)
 
@@ -51,7 +53,7 @@ uv run verdikt ui                    # http://127.0.0.1:8765
 
 ## Running without API keys
 
-A source whose key is missing is disabled; verdikt never fails because of it. These sources work with no key at all: Shodan InternetDB (IP only), urlscan.io search, AlienVault OTX and GreyNoise Community (IP only).
+A source whose key is missing is disabled; verdikt never fails because of it. These sources work with no key at all: Shodan InternetDB (IP only), urlscan.io search, AlienVault OTX, GreyNoise Community (IP only), RDAP (domain age), CIRCL hashlookup (file hashes), the local feeds (`localfeeds`, after `verdikt feeds update`) and crt.sh (off until `VERDIKT_CRTSH=true`).
 
 Without keys you can still look up IPs and domains (domain age comes from RDAP, also keyless), but the verdict will usually be `unknown` (exit code 12). InternetDB and GreyNoise only add context, and the sources that decide most verdicts (VirusTotal, abuse.ch, AbuseIPDB) need keys. A `malicious` verdict needs at least one of those. Run `uv run verdikt sources` to see what is enabled. `uv run verdikt feeds update` adds the local blocklists and known-good lists, which need no key.
 
@@ -80,7 +82,7 @@ Secrets and paths come from `.env` in the working directory (copy `.env.example`
 | `VERDIKT_DNS_RESOLVE` | `true` enables DNS resolution of domains (default `false`, see [privacy](#input-handling-and-privacy)) |
 | `VERDIKT_REPORT_RETENTION_DAYS` | Stored reports older than this many days are deleted at startup (default `90`; `0` keeps them forever). Expired cache rows and old budget rows are always deleted. Analyst feedback is kept |
 | `VERDIKT_AUDIT_LOG` | Path of the JSON-lines audit log. Default: `audit.jsonl` in the user data directory |
-| `VERDIKT_FEEDS_DIR` | Folder for the downloaded feeds (blocklists, Tor exits, Tranco, KEV, EPSS). Default: `feeds` in the user data directory |
+| `VERDIKT_FEEDS_DIR` | Folder for the downloaded feeds (blocklists, OpenPhish, Tor exits, Tranco, KEV, EPSS). Default: `feeds` in the user data directory |
 | `VERDIKT_WATCH_EVERY_HOURS`, `VERDIKT_FEEDS_EVERY_HOURS` | Background watchlist re-check and feed refresh inside `verdikt ui`. `0` (default) is off, otherwise at least `1` |
 | `VERDIKT_WATCH_NOTIFY`, `VERDIKT_WATCH_MIN_LEVEL`, `VERDIKT_WATCH_NOTIFY_ANY` | `slack`, `telegram`, `discord`, `teams` or `email` for scheduled verdict changes, the lowest level to send (default `suspicious`), and `true` to also report downgrades such as suspicious to safe |
 | `VERDIKT_VT_RESOLUTIONS` | `true` adds passive DNS from VirusTotal resolutions. Costs one extra VirusTotal call per domain or IP check and shares its 4/min and 500/day |
@@ -94,14 +96,14 @@ GeoLite2 needs a free MaxMind account and periodic updates (`geoipupdate`). The 
 ## Command line
 
 ```bash
-uv run verdikt check <ioc> [--json] [--stix] [--raw] [--no-cache] [--notify slack|telegram] [--min-level suspicious]
-uv run verdikt bulk <file> [--json] [--notify slack|telegram] [--min-level suspicious]
+uv run verdikt check <ioc> [--json] [--stix] [--raw] [--no-cache] [--notify slack|telegram|discord|teams|email] [--min-level suspicious]
+uv run verdikt bulk <file> [--json] [--notify slack|telegram|discord|teams|email] [--min-level suspicious]
 uv run verdikt sources
 uv run verdikt cache clear [--source NAME]
 uv run verdikt feeds update | status        # download or inspect the local feeds
 uv run verdikt feeds import <file> --name N  # MISP event or STIX bundle as a local blocklist
 uv run verdikt feeds forget N                # remove an imported list
-uv run verdikt check <ioc> --misp            # MISP event JSON (also --stix)
+uv run verdikt check <ioc> --misp            # MISP event JSON (--stix gives STIX 2.1)
 uv run verdikt watch add|list|remove|run     # watchlist and re-checks
 uv run verdikt extract <file|->              # list the indicators in free text
 uv run verdikt bulk <file> [--text] [--csv] [--resume]
@@ -111,9 +113,13 @@ uv run verdikt ui [--port 8765] [--no-open] [--dev]
 | Command | What it does |
 |---|---|
 | `check` | Checks one IOC and prints a verdict, the reasons, and a table of sources. `--json` prints the `Report` as JSON. `--raw` keeps each vendor's raw response (otherwise stripped). `--no-cache` skips cached answers but still stores the new ones. |
-| `bulk` | Reads one IOC per line (blank lines and lines starting with `#` are ignored) and checks them one after another, so the rate limiters and daily budgets are respected. `--json` prints one report per line. |
+| `bulk` | Reads one IOC per line (blank lines and lines starting with `#` are ignored) and checks them one after another, so the rate limiters and daily budgets are respected. `--json` prints one report per line, `--csv` prints a CSV table, `--text` first extracts the indicators from free text, and `--resume` skips anything checked in the last 24 hours. |
 | `sources` | Lists each source, whether it is enabled, what it supports and the requests used today against its daily budget. |
 | `cache clear` | Deletes cached source answers (all, or one source). Report history is kept. |
+| `extract` | Lists the indicators found in free text (a file or `-` for stdin), defanged ones included. Nothing is looked up. |
+| `doctor` | Shows which sources are enabled, whether feeds and GeoIP are set up, which notifiers are configured and where the database and audit log live. |
+| `watch` | `add`, `list` and `remove` manage the watchlist; `run` re-checks every entry without the cache and records verdict changes (`--notify` sends them). |
+| `feeds` | `update` downloads the local feeds, `status` shows what is downloaded, `import` loads a MISP event or STIX bundle as a local blocklist (`--name`, `--all`) and `forget` removes one. |
 | `ui` | Starts the local web UI on `127.0.0.1` only and opens a browser unless `--no-open`. `--dev` reloads on change and uses the fixed token `dev-token`. |
 
 Input may be defanged (`hxxp://evil[.]com`, `1[.]2[.]3[.]4`); it is refanged first. A leading `--` is handled safely, so an IOC that looks like an option cannot be misread.
@@ -156,10 +162,10 @@ Feed data is attacker-controlled and is always rendered as text, never as HTML.
 
 Each source reports plain facts (counts, scores, booleans) as `metrics`. It never sets a level and holds no thresholds. `verdict.decide()` is a pure function that turns the metrics into a level for each row and a final verdict, using `rules.yaml`:
 
-1. Each successful row becomes MALICIOUS, SUSPICIOUS or SAFE from the rules. Context-only sources (InternetDB, GreyNoise) become INFO.
+1. Each successful row becomes MALICIOUS, SUSPICIOUS or SAFE from the rules. Context-only sources (InternetDB, GreyNoise, OTX, urlscan, crt.sh, passive DNS) become INFO.
 2. Any MALICIOUS row makes the verdict MALICIOUS.
-3. Any SUSPICIOUS row makes it SUSPICIOUS, unless a benign override matches (GreyNoise `riot`), which gives SAFE. An override never touches MALICIOUS.
-4. Otherwise the verdict is SAFE only if at least `min_sources_for_safe` (default 2) verdict-bearing sources answered successfully, at least `min_high_weight_for_safe` (default 1) of them are strong sources (high-weight sources that are not list-only feeds: today VirusTotal), and no high-weight source returned an error, was rate limited or had no record. Weak sources and list-only feeds alone never give SAFE. A "not listed" answer from ThreatFox, URLhaus or MalwareBazaar is absence of evidence, so it carries no weight in `confidence` either way. OTX and urlscan are context only and never change the verdict.
+3. Any SUSPICIOUS row makes it SUSPICIOUS, unless a benign override matches (GreyNoise `riot`, hashlookup `known_good`, a Tranco top site in `localfeeds`), which gives SAFE. An override never touches MALICIOUS.
+4. Otherwise the verdict is SAFE only if at least `min_sources_for_safe` (default 2) verdict-bearing sources answered successfully, at least `min_high_weight_for_safe` (default 1) of them are strong sources (high-weight sources that are not list-only feeds: today VirusTotal), and no high-weight source returned an error, was rate limited or had no record. Weak sources and list-only feeds alone never give SAFE. A "not listed" answer from ThreatFox, URLhaus or MalwareBazaar is absence of evidence, so it carries no weight in `confidence` either way. The context-only sources never change the verdict.
 5. Otherwise it is UNKNOWN.
 
 Every report also carries a `confidence` of low, medium or high. It is the summed `weights` (in `rules.yaml`) of the sources that agree with the verdict, compared with `confidence_high` and `confidence_medium`; conflicting evidence at least as heavy as the agreeing evidence, or an `unknown` verdict, gives low. Confidence never changes the verdict.
@@ -168,7 +174,7 @@ In the UI every source row has a **Why** panel: its role (strong, weak, list-onl
 
 Two rules came from real data. A host-level URLhaus listing (a host with an online listed URL) is only **suspicious**, because popular hosts such as `github.com` always have some; only an exact URL match is malicious. And RDAP domain age under 30 days (`age_days__lt: 30` in `rules.yaml`, where a `__lt` key means "less than") is suspicious with weight 1: it is a weak signal that many legitimate new sites also trigger.
 
-Errors and rate limits never count as clean. A source that has no record of the indicator (`not found`) is neither clean nor an error: it does not count towards `min_sources_for_safe` and does not block SAFE.
+Errors and rate limits never count as clean. A source that has no record of the indicator (`not found`) is neither clean nor an error: it does not count towards `min_sources_for_safe`, and from a high-weight source (VirusTotal) it blocks SAFE like an error does.
 
 The default `rules.yaml` is packaged with the library. To change thresholds, copy it, edit it, and point `VERDIKT_RULES_PATH` at your copy. Rules are plain YAML validated against a schema: an integer means "metric is at least this", a boolean means "metric is exactly this", and several keys inside one source are OR'ed. There is no expression language.
 
@@ -187,7 +193,7 @@ verdikt takes care not to leak what you investigate.
 
 ## Notifications
 
-`--notify slack|telegram|discord|teams|email` posts the result when its level is at or above `--min-level` (default `suspicious`). The order is SAFE, UNKNOWN, SUSPICIOUS, MALICIOUS. The message has a level icon, the defanged indicator and type, one line per source that hit, and a link to the VirusTotal or urlscan page. Feed-derived text is escaped before sending (HTML escaping for Telegram, `&`, `<`, `>` for Slack). A failed send is reported in the CLI output, never silently dropped, and never includes the webhook URL or token.
+`--notify slack|telegram|discord|teams|email` posts the result when its level is at or above `--min-level` (default `suspicious`). The order is SAFE, UNKNOWN, SUSPICIOUS, MALICIOUS. The message has a level icon, the defanged indicator and type, one line per source that hit, and a link to the VirusTotal or urlscan page. Feed-derived text is made safe before sending: it is put on one line and every dot is defanged; Telegram gets HTML escaping, Slack gets `&`, `<`, `>` escaped and loses backticks, `*` and `~`, Discord and Teams swap `(` and `)` for `{` and `}`, and Discord sends `allowed_mentions: {parse: []}` so nothing pings. A 429 is retried once when the service asks for a wait of 10 seconds or less (from the `Retry-After` header or the JSON body); a longer wait is reported, not slept on. A failed send is reported in the CLI output, never silently dropped, and never includes the webhook URL or token.
 
 ## Local feeds, known-good lists and CVE context
 
@@ -195,7 +201,8 @@ verdikt takes care not to leak what you investigate.
 
 | Feed | Used for |
 |---|---|
-| Feodo Tracker botnet C2 IPs and Spamhaus DROP networks | An IP on either list is **malicious** (source `localfeeds`) |
+| Feodo Tracker botnet C2 IPs and Spamhaus DROP networks | An IP on either list is **malicious** (source `localfeeds`). Lists imported from MISP or STIX (`feeds import`) are matched the same way |
+| OpenPhish community feed | A URL on the list is **malicious** (source `localfeeds`) |
 | Tor exit node list | Tags an IP as a Tor exit; context only |
 | Tranco top 100,000 sites | An **exact** match of a domain softens a suspicious verdict to safe. `sub.example.com` does not inherit `example.com`, and a top site can never clear a malicious verdict |
 | CISA Known Exploited Vulnerabilities and EPSS scores | CVEs that InternetDB reports for a host are shown with a KEV badge and an exploit probability. Context only: a vulnerable host is not a malicious one |
@@ -206,7 +213,7 @@ CIRCL hashlookup (an API, no key) answers whether a file hash is in known-file s
 
 The **Overview** page shows checks per day by verdict, source health (answer rate, errors, rate limits, cache hits, average latency over live calls), recurring infrastructure from the "seen before" index, verdict feedback counts, the watchlist and the status of the local feeds.
 
-- **Watchlist:** choose "Watch" on a report (or `verdikt watch add <ioc>`). "Re-check all" and `verdikt watch run` check every entry again **without the cache**, so they spend source quota, record any verdict change, and with `--notify` send the changed ones to Slack or Telegram. There is no built-in scheduler: run `verdikt watch run` from cron or Task Scheduler. The list is capped at 50 entries.
+- **Watchlist:** choose "Watch" on a report (or `verdikt watch add <ioc>`). "Re-check all" and `verdikt watch run` check every entry again **without the cache**, so they spend source quota, record any verdict change, and with `--notify` send the changed ones to any of the five notifiers. `verdikt ui` can run the re-check on a schedule (see below); when the UI is not running, use cron or Task Scheduler with `verdikt watch run`. The list is capped at 50 entries.
 - **Batch:** paste a ticket, an email or a list on the **Batch** page. Indicators are found (defanged ones too), normalized and deduplicated; internal targets are listed as skipped and never looked up. "Check all" runs them one at a time and the table can be exported as CSV. The same from the shell: `verdikt extract ticket.txt` lists the indicators, and `verdikt bulk ticket.txt --text --csv > results.csv` checks them (`--resume` skips anything checked in the last 24 hours). CSV cells that start with `=`, `+`, `-` or `@` get a leading apostrophe so a spreadsheet cannot run them as formulas.
 
 ## Investigations, exports and the scheduler
@@ -214,7 +221,7 @@ The **Overview** page shows checks per day by verdict, source health (answer rat
 - **Cases (the Cases page):** a case groups reports with notes and tags (up to 10 tags). Use "New case" or "Add to case" on a report. A case exports as Markdown or as one self-contained HTML page. Reports that belong to a case are never deleted by report retention, so the evidence stays.
 - **Report exports:** each report exports as Markdown, HTML, STIX 2.1 or a MISP event JSON. Exports are made to be shared: indicators are defanged, feed text is escaped (HTML) or put in inline code (Markdown), and the HTML contains no script and no external resource. The MISP event is a file you import into MISP yourself; its shape follows MISP's event format but was never validated against a live MISP. `distribution` is 0 (your organisation only): widen it in MISP on purpose.
 - **Import:** `verdikt feeds import event.json --name case-1` (or the Overview page) loads a MISP event file or a STIX 2.1 bundle as a local blocklist. Only MISP attributes marked `to_ids` are used unless you pass `--all`. Imported indicators count as blocklisted, so a match makes the verdict malicious. Remove one with `verdikt feeds forget case-1`.
-- **Scheduler:** with `VERDIKT_WATCH_EVERY_HOURS` and `VERDIKT_FEEDS_EVERY_HOURS` set (each 0 for off, otherwise at least 1), `verdikt ui` re-checks the watchlist and refreshes the feeds in the background; the first run happens one interval after the UI starts. `VERDIKT_WATCH_NOTIFY=slack|telegram` sends verdict changes at or above `VERDIKT_WATCH_MIN_LEVEL`. Jobs run only while the UI is open; use cron or Task Scheduler with `verdikt watch run` for an always-on schedule. The Overview page shows each job's last result and has a "Run now" button.
+- **Scheduler:** with `VERDIKT_WATCH_EVERY_HOURS` and `VERDIKT_FEEDS_EVERY_HOURS` set (each 0 for off, otherwise at least 1), `verdikt ui` re-checks the watchlist and refreshes the feeds in the background; the first run happens one interval after the UI starts. `VERDIKT_WATCH_NOTIFY=slack|telegram|discord|teams|email` sends verdict changes at or above `VERDIKT_WATCH_MIN_LEVEL`. Jobs run only while the UI is open; use cron or Task Scheduler with `verdikt watch run` for an always-on schedule. The Overview page shows each job's last result and has a "Run now" button.
 
 ## Audit log and SIEM
 
@@ -273,10 +280,17 @@ src/verdikt/
   watch.py         watchlist re-checks
   audit.py         JSON-lines audit log
   stix.py          STIX 2.1 export
+  misp.py          MISP event export
+  export.py        Markdown and HTML report and case exports
+  scheduler.py     background watchlist and feed jobs inside `verdikt ui`
+  jsonutil.py     typed access to untrusted JSON
+  httputil.py      Retry-After parsing shared by sources and notifiers
   sources/feeds.py local feeds: download, parse, lookup
+  sources/importers.py  MISP and STIX files as local blocklists
+  enrich/cve.py    CISA KEV and EPSS context
 web/               React single-page app (Vite, Tailwind, TanStack Query, Cytoscape)
 integrations/      Cortex analyzer and Shuffle app definition
-scripts/           dump_openapi.py
+scripts/           dump_openapi.py, e2e_server.py (fake sources for the e2e tests)
 tests/             pytest suite and fixtures
 docs/              design notes and reference documents
 ```
@@ -304,6 +318,7 @@ docs/              design notes and reference documents
 ## Licensing notes
 
 - The VirusTotal public API and Shodan InternetDB forbid commercial products. Check before using verdikt at work.
+- The OpenPhish community feed is free for non-commercial use only.
 - IPinfo Lite is not used by default and requires attribution if you add it.
 - MaxMind GeoLite2 databases are licensed by MaxMind. Never commit them.
 - The land outline comes from Natural Earth (public domain) through `world-atlas`, used only by the one-off generator script.

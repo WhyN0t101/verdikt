@@ -30,7 +30,7 @@ Rule semantics: an integer means "metric is at least this value", a boolean mean
 
 | Source | Metrics | Default rule |
 |---|---|---|
-| `virustotal` | `malicious`, `suspicious`, `harmless`, `undetected`, `total` | MALICIOUS at `malicious >= 5`; SUSPICIOUS at `malicious >= 1` or `suspicious >= 1` |
+| `virustotal` | `malicious`, `suspicious`, `harmless`, `undetected`, `total`, `last_analysis_age_days`, `reputation` (no default rule reads the last two) | MALICIOUS at `malicious >= 5`; SUSPICIOUS at `malicious >= 1` or `suspicious >= 1` |
 | `abuseipdb` | `score`, `reports`, `tor` | MALICIOUS at `score >= 75`; SUSPICIOUS at `score >= 25` |
 | `urlscan` | `scans` | INFO row |
 | `threatfox` | `match`, `entries` | MALICIOUS when `match` is true |
@@ -52,7 +52,7 @@ Rule semantics: an integer means "metric is at least this value", a boolean mean
 |---|---|---|
 | Lookup succeeded, indicator present | `ok` | yes (if verdict-bearing) |
 | Feed answered "no match" (ThreatFox, URLhaus, MalwareBazaar) | `ok` with `match: false` | yes |
-| No record at the source (HTTP 404, GreyNoise not observed) | `not_found` | no, and does not block SAFE |
+| No record at the source (HTTP 404, GreyNoise not observed) | `not_found` | no; blocks SAFE if the source is high weight |
 | HTTP 429, daily budget used up, `Retry-After` longer than the timeout | `rate_limited` | no; blocks SAFE if the source is high weight |
 | Other 4xx or 5xx after retries, timeout, network error, malformed body | `error` | no; blocks SAFE if the source is high weight |
 

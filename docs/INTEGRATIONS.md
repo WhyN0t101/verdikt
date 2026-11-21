@@ -62,7 +62,7 @@ Network notes:
 uv run verdikt bulk ticket.txt --text --csv > results.csv   # exit code is the worst verdict
 ```
 
-On Windows use Task Scheduler with the same commands. A watchlist re-check skips the cache and spends source quota for every entry (maximum 50). Refresh the local feeds with `verdikt feeds update` on whatever schedule suits you; there is no built-in scheduler.
+On Windows use Task Scheduler with the same commands. A watchlist re-check skips the cache and spends source quota for every entry (maximum 50). Refresh the local feeds with `verdikt feeds update` on whatever schedule suits you; `verdikt ui` can do both while it runs (`VERDIKT_FEEDS_EVERY_HOURS`, `VERDIKT_WATCH_EVERY_HOURS`); use cron or Task Scheduler when the UI is not running.
 
 ## SIEM and STIX
 
@@ -77,4 +77,4 @@ On Windows use Task Scheduler with the same commands. A watchlist re-check skips
 
 ## Planned seams
 
-These are built into the structure but not yet features: third-party sources through a `verdikt.sources` entry-point group, a user `rules.yaml` override (available now through `VERDIKT_RULES_PATH`), notifier plugins (Discord, Teams, email), theme swaps through `web/src/styles/tokens.css`, and independent UI panels for a dashboard layout.
+These are built into the structure but not yet features: third-party sources through a `verdikt.sources` entry-point group, a user `rules.yaml` override (available now through `VERDIKT_RULES_PATH`), notifier plugins (Slack, Telegram, Discord, Teams and email are built in; only a plugin mechanism is deferred), theme swaps through `web/src/styles/tokens.css`, and independent UI panels for a dashboard layout.

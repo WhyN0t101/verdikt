@@ -1,6 +1,6 @@
 # verdikt — Implementation Plan
 
-verdikt takes an IOC (IP, domain, URL or hash), queries several threat-intelligence sources in parallel, returns a short verdict, optionally notifies Slack or Telegram, and shows the result in a local browser UI with a map and a relationship graph.
+verdikt takes an IOC (IP, domain, URL or hash), queries several threat-intelligence sources in parallel, returns a short verdict, optionally notifies Slack, Telegram, Discord, Microsoft Teams or email, and shows the result in a local browser UI with a map and a relationship graph.
 
 Guiding rule: the core is a Python library that returns one JSON model. The CLI, the API, the UI and any later SOAR integration all consume that model. Nothing else talks to threat-intel APIs.
 
@@ -52,12 +52,12 @@ Guiding rule: the core is a Python library that returns one JSON model. The CLI,
 | Concern | Choice |
 |---|---|
 | Build | Vite + React + TypeScript (SPA, no SSR) |
-| Styling | Tailwind CSS + shadcn/ui, design tokens as CSS variables |
+| Styling | Tailwind CSS (plain components in `components/ui`, no shadcn/ui), design tokens as CSS variables |
 | Data fetching | TanStack Query |
-| Map | MapLibre GL (`react-map-gl`). Arcs = `line` layer with great-circle points computed in a small helper. No deck.gl |
-| Basemap | OpenFreeMap dark style, **`maxZoom` capped at country level (≤ 4)** so tile requests don't reveal the investigated city. Self-hosted Protomaps PMTiles later lift the cap |
+| Map | Dot-matrix world map drawn on a canvas from a bundled land outline; arcs are great-circle points computed in a small helper. No map library, no deck.gl |
+| Basemap | None: no tiles, so the map makes no remote request and cannot reveal what you investigate |
 | Graph | Cytoscape.js + `cytoscape-fcose` layout |
-| Fonts | Inter (UI), JetBrains Mono (IOCs, hashes, JSON), self-hosted |
+| Fonts | Familjen Grotesk Variable (UI), Martian Mono Variable (IOCs, hashes, JSON), self-hosted |
 | Land data | `web/src/data/land.json`: Natural Earth land rasterised to a 2° dot grid by `npm run gen:land` (devDependencies `world-atlas`, `topojson-client`, used only by that script) |
 | Tests | Vitest for utilities, one Playwright smoke test |
 
@@ -114,6 +114,7 @@ verdikt/
 │   ├── stix.py  misp.py         # STIX 2.1 bundle and MISP event export
 │   ├── export.py                # Markdown / HTML report and case export
 │   ├── jsonutil.py              # typed accessors for untyped vendor JSON
+│   ├── httputil.py              # Retry-After parsing shared by sources and notifiers
 │   ├── sources/
 │   │   ├── base.py              # Source protocol, Gate (limiter, budget, retries), BaseSource
 │   │   ├── virustotal.py  abuseipdb.py  urlscan.py  hybrid.py
@@ -216,6 +217,10 @@ class Source(Protocol):
     rate: tuple[int, float]  # calls, seconds
     ttl: timedelta
     daily_budget: int | None  # requests/day; None = uncapped (usage still counted)
+    timeout: float  # per-request seconds (crt.sh needs more than the default)
+    quota_group: (
+        str | None
+    )  # share another source's limiter and budget (passive DNS uses VirusTotal's)
     enabled: bool  # property: key present or key not required
 
     async def query(self, ioc: IOC, http: Gate) -> SourceResult: ...
@@ -370,7 +375,7 @@ Exit codes (kept off 1 and 2, which Python crashes and Click usage errors alread
 - Platforms: Slack (incoming webhook), Telegram (Bot API `sendMessage`, `parse_mode=HTML`), Discord (webhook; always `allowed_mentions: {parse: []}` so feed text cannot ping `@everyone`), Microsoft Teams (webhook), and email (stdlib `smtplib`: STARTTLS, or implicit TLS on port 465; login only after the channel is encrypted).
 - Send only at or above `--min-level` (default `suspicious`). `VERDIKT_NOTIFY_COOLDOWN_HOURS` (default 0 = off) skips a repeat alert for the same indicator at the same level.
 - Always defang IOCs in messages.
-- Escape all feed-derived text (tags, family names, summaries) before sending: Telegram via `html.escape()`; Slack by replacing `&` `<` `>` with `&amp;` `&lt;` `&gt;`. Otherwise `a<b` makes Telegram return 400 (alert lost) and `<https://evil|Open report>` renders as a fake Slack link. Discord, Teams and email get the plain-text message with link-like tokens defanged.
+- Escape all feed-derived text (tags, family names, summaries) before sending. Every channel first puts it on one line and defangs every dot. Telegram then goes through `html.escape()`; Slack replaces `&` `<` `>` with `&amp;` `&lt;` `&gt;` and drops backticks, `*` and `~`; Discord and Teams replace `(` and `)` with `{` and `}`. Otherwise `a<b` makes Telegram return 400 (alert lost) and `<https://evil|Open report>` renders as a fake Slack link.
 - **Rate limits.** Webhooks answer HTTP 429 under bursts (bulk runs, a big watch re-check). A 429 whose `Retry-After` (seconds or an HTTP date) is at most the notify timeout (10 s) is waited out and retried once; a longer one, a missing header, or a second 429 is reported as `rate limited (HTTP 429), retry after N s`. Nothing waits longer than the timeout. Other HTTP errors are not retried.
 - A failed send is logged and reported in the CLI output, never swallowed; the report never contains the webhook URL or bot token.
 - Message: level emoji + IOC + type, one line per source that hit, link to the VT/urlscan page.
@@ -419,7 +424,7 @@ All `/api/*` routes and `/openapi.json` require the `X-Verdikt-Token` header. `v
 
 ## 13. UI
 
-**Visual direction, palette and layout mapping live in `docs/DESIGN.md`** (references in `docs/design/`). That file wins over the wireframe and token list below where they differ. The dot-matrix world map with no remote tiles proposed there replaces the OpenFreeMap basemap and MapLibre (implemented in M6, pending the user's confirmation; no map requests, so the country-zoom cap is moot). shadcn/ui is not used: plain Tailwind components, to avoid the Radix dependency tree. Fonts (Inter, JetBrains Mono) are self-hosted via `@fontsource-variable/*`.
+**Visual direction, palette and layout mapping live in `docs/DESIGN.md`** (references in `docs/design/`). That file wins over the wireframe and token list below where they differ. The map is a dot-matrix canvas with no remote tiles and no map library (so there is no zoom cap to keep). shadcn/ui is not used: plain Tailwind components, to avoid the Radix dependency tree. Fonts (Familjen Grotesk, Martian Mono) are self-hosted via `@fontsource-variable/*`.
 
 ### Layout
 
@@ -439,7 +444,7 @@ All `/api/*` routes and `/openapi.json` require the `X-Verdikt-Token` header. `v
 │               │ └───────────────────────────────────────────┘  │
 │               │ [ Map ] [ Graph ] [ Raw JSON ]                 │
 │               │ ┌──────────────────────────────────────────┐   │
-│               │ │   dark MapLibre map, arcs, pulsing dots  │   │
+│               │ │   dot-matrix map, arcs, pulsing dots     │   │
 │               │ └──────────────────────────────────────────┘   │
 └───────────────┴────────────────────────────────────────────────┘
 ```
@@ -459,7 +464,7 @@ All `/api/*` routes and `/openapi.json` require the `X-Verdikt-Token` header. `v
 - Arcs from the IOC to related infrastructure (resolved IPs, C2 peers).
 - Hover: IP, ASN, country, level. Click: pivot.
 - Geo is approximate. The tooltip says so for cloud/VPN ASNs.
-- Zoom is capped at country level until tiles are self-hosted (see stack table).
+- The map has no tiles, so it makes no request (see stack table).
 
 ### Graph
 
@@ -481,7 +486,7 @@ All `/api/*` routes and `/openapi.json` require the `X-Verdikt-Token` header. `v
 - **DNS resolution is off by default.** Resolving a domain can reach the attacker's authoritative name server. Prefer passive DNS from VT/OTX.
 - Internal targets are never sent to third parties: private IPs, URLs with private/internal hosts, internal hostnames (§7 step 4).
 - Render source text as text, never as HTML: threat-feed data is attacker-controlled. Same for notifications: escape before sending (§11).
-- Map tiles are a lookup leak too: zoom capped at country level until self-hosted.
+- Map tiles would be a lookup leak too: the map uses none and must make no remote request.
 
 ---
 
@@ -509,7 +514,7 @@ Each milestone ends with tests passing and an acceptance check.
 | M0 | Scaffold: uv project, ruff, pyright, pytest, `.env.example`, CI | `uv run pytest` green on an empty suite |
 | M1 | `models`, `detect`, VirusTotal, `engine`, `verdikt check` | `verdikt check 8.8.8.8` prints a VT result |
 | M2 | AbuseIPDB, urlscan, abuse.ch ×3, OTX, GreyNoise, InternetDB, Hybrid Analysis; `verdict.py`; cache; `--json`; exit codes | IP, domain and hash each return a full report; second run is served from cache |
-| M3 | Slack + Telegram notify | A malicious test IOC posts a defanged message |
+| M3 | Slack + Telegram notify (Discord, Teams and email came in 19c) | A malicious test IOC posts a defanged message |
 | M4 | FastAPI: routes, security checks, `verdikt ui` | `curl` with token returns a Report; without token returns 401 |
 | M5 | Frontend: command bar, verdict card, source table, raw JSON, history | Search in browser shows a live result |
 | M6 | GeoLite2 enrich + map view | IP IOC shows a marker and arcs to related IPs |
@@ -523,7 +528,7 @@ Each milestone ends with tests passing and an acceptance check.
 
 - Sources: entry-point plugins (`verdikt.sources`).
 - Rules: user `rules.yaml` overrides the default.
-- Notifiers: same plugin pattern as sources (Discord, Teams, email).
+- Notifiers: the same plugin pattern as sources (Slack, Telegram, Discord, Teams and email are built in; only the plugin mechanism is deferred).
 - Themes: swap `tokens.css` values.
 - Layout: UI panels as independent components, so a dashboard layout can be added without rewriting them.
 
@@ -546,14 +551,14 @@ Built in one pass at the user's request; each item is covered by tests and, for 
 |---|---|---|
 | Sources | `localfeeds` (Feodo, Spamhaus DROP, Tor exits, Tranco top 100k) and `hashlookup` (CIRCL) | Local data is downloaded by `verdikt feeds update`; lookups need no quota. Tranco matches exactly |
 | Context | CISA KEV and EPSS for the CVEs InternetDB reports | `Report.cves`, informational only |
-| Model | `Report.confidence`, `seen_before`, `cves`; `schema_version` 3 | Confidence from `rules.yaml` weights; never changes the level |
+| Model | `Report.confidence`, `seen_before`, `cves`; `schema_version` 3 at the time (now 4, see 19b) | Confidence from `rules.yaml` weights; never changes the level |
 | Data | Cache pruning and retention, source statistics, watchlist, analyst feedback, audit log | `VERDIKT_REPORT_RETENTION_DAYS`, `VERDIKT_AUDIT_LOG`, `VERDIKT_FEEDS_DIR` |
 | CLI | `feeds update/status`, `watch add/list/remove/run`, `extract`, `bulk --text --csv --resume`, `check --stix` | Scheduling is left to cron or Task Scheduler |
 | API | `/api/stats`, `/api/watchlist` (+ recheck), `/api/feeds` (+ update), `/api/extract`, `/api/reports/{id}/stix`, feedback | All token-gated, JSON-only POST (send `{}` for an empty body) |
 | UI | Overview, Batch, Vulnerabilities, Seen before, feedback, Watch, STIX export | Plain Tailwind components; activity chart is inline SVG with a data table |
 | Tests | Playwright end to end against `scripts/e2e_server.py` | Fake sources, in-memory database, no network; runs in CI |
 
-Not built (ideas): MISP/OpenCTI import or push, saved investigations and notes, a built-in scheduler, per-result urlscan verdicts (needs a key), passive DNS and WHOIS/RDAP domain age.
+Built later in 19b: MISP/STIX import, cases (saved investigations), the in-UI scheduler, passive DNS and RDAP domain age. Still not built: live MISP/OpenCTI push and per-result urlscan verdicts (needs a key).
 
 ### 19b. Second batch
 
@@ -576,7 +581,7 @@ Not built: a urlscan per-result verdict source (result pages are 13 to 40 MB eac
 | Verdict | `virustotal: {malicious: 2}` is suspicious (was 1) | One engine alone is usually a false positive; one `suspicious` engine still counts |
 | Watch | Re-checks run 4 at a time; a lookup that ended UNKNOWN because a source errored or was rate limited is not a verdict change | `POST /api/scheduler/{name}/start` runs a job in the background; `GET /api/scheduler` shows `running` and `progress` ("3/50") |
 | Scheduler | One lock per job (no double runs); `last_run` persists in the new `kv` table, so a restart keeps the cadence | An overdue job waits a full interval: starting the UI never spends quota |
-| Notify | Discord, Teams and email (stdlib `smtplib`); `VERDIKT_NOTIFY_COOLDOWN_HOURS`; `VERDIKT_WATCH_NOTIFY_ANY` | Discord sends `allowed_mentions: {parse: []}`; only link-like tokens are defanged; Slack markup characters in feed text are stripped |
+| Notify | Discord, Teams and email (stdlib `smtplib`); `VERDIKT_NOTIFY_COOLDOWN_HOURS`; `VERDIKT_WATCH_NOTIFY_ANY` | Discord sends `allowed_mentions: {parse: []}`; every dot of feed text is defanged; Slack markup characters in feed text are stripped |
 | Detect | NAT64 wrapping a private IPv4 is refused; `.intranet .private .home .localdomain` are internal; `fullmatch` for every anchored pattern | |
 | Imports | Parsing runs in a thread; the 100k cap applies before `detect()`; `RecursionError` is an import error | |
 | Misc | `verdikt doctor`; audit log rotates at 10 MB to `.1`; locally matched sources (ttl 0) skip the cache write; unique temp names for feed writes; shared quota groups show the group's spend | |

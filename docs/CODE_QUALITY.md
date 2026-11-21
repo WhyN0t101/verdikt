@@ -33,7 +33,7 @@ These come straight from CLAUDE.md. Any hit is fix now.
 | Check | Command or place to look | Expected |
 |---|---|---|
 | No HTML injection in the SPA | `grep -rnE "dangerouslySetInnerHTML\|innerHTML\|eval\(" web/src` | no hits (eslint already blocks the first) |
-| Notifications escape feed text | read `src/verdikt/notify/format.py` | `html.escape` for Telegram, `&`, `<`, `>` for Slack, on every feed-derived string |
+| Notifications escape feed text | read `src/verdikt/notify/format.py` | one line and every dot defanged on every feed-derived string; `html.escape` for Telegram, `&`, `<`, `>` (backtick, `*`, `~` removed) for Slack, `(` `)` swapped for `{` `}` for Discord and Teams |
 | Keys never reach logs, errors or URLs | `grep -rnE "api_key\|apikey\|x-apikey\|Auth-Key\|Authorization\|token" src/verdikt` and inspect each hit near `log`, `print`, `raise`, f-strings and `params=` | keys only in headers; no key in any message |
 | Exception text never carries a URL | every `except httpx.HTTPError` branch | message uses the exception class name only (httpx messages include the URL) |
 | API guard intact | read `src/verdikt/api/app.py` | Host check, constant-time token compare, JSON-only POST, no CORS headers, `127.0.0.1` bind |
@@ -124,6 +124,5 @@ End the report with the commands that were run, the tool versions, and what was 
 
 Found while preparing this document; confirm and triage them on the first run.
 
-- `Engine.check` hides source exceptions without logging (section 6).
-- Some suppressions in `src/` lack a justification (section 8).
+- Two `# pyright: ignore` suppressions have no reason next to them: `scheduler.py` (the task list) and `sources/base.py` (`json_object`). Add one or remove them (section 8).
 - urlscan search rows often carry no verdict data, so that source currently contributes nothing (see `docs/SOURCES.md`).

@@ -31,8 +31,9 @@ Responses also carry a strict `Content-Security-Policy` (scripts and connections
 | POST | `/api/cases/{id}/reports` | `{report_id}`: add a report. Reports in a case are exempt from retention |
 | DELETE | `/api/cases/{id}/reports/{report_id}` | Remove a report from the case |
 | GET | `/api/cases/{id}/export?format=md\|html` | The whole case as one document |
-| GET | `/api/scheduler` | Jobs `watch` and `feeds`: interval, last run, last result, next run |
-| POST | `/api/scheduler/{name}/run` | Run a job now |
+| GET | `/api/scheduler` | Jobs `watch` and `feeds`: interval, last run, last result, next run, `running` and `progress` (for example `3/50`) |
+| POST | `/api/scheduler/{name}/start` | Start a job now and return at once; poll `GET /api/scheduler` for `running` and `progress` |
+| POST | `/api/scheduler/{name}/run` | Run a job now and wait for it to finish |
 | POST, DELETE | `/api/feeds/import` | POST `{name, content, all_attributes?}` imports a MISP event or STIX bundle as a local list; DELETE `?name=` removes it |
 | GET | `/api/stats?days=30` | Dashboard data: checks per day by level, per-source health, recurring indicators, feedback counts (`days` 1 to 90) |
 | GET | `/api/watchlist` | Watched entries and the latest verdict changes |
