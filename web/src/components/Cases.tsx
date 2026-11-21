@@ -4,9 +4,8 @@ import { api } from "../api";
 import { downloadText } from "../lib/csv";
 import { ago, shortenMiddle, typeTag } from "../lib/format";
 import type { CaseDetail, IOCType, Level } from "../model";
-import { LEVEL_BG } from "./LevelBadge";
-
-const BTN = "rounded border border-line-strong px-2.5 py-1 text-xs hover:border-accent disabled:opacity-50";
+import { LevelBadge } from "./LevelBadge";
+import { Button, FIELD } from "./ui";
 
 function Detail({ id, onOpen, onGone }: { id: string; onOpen: (reportId: string) => void; onGone: () => void }) {
   const q = useQuery({ queryKey: ["case", id], queryFn: () => api.caseGet(id) });
@@ -68,29 +67,29 @@ function Editor({
   return (
     <section aria-label="Case detail" className="space-y-4 p-4">
       <div>
-        <label htmlFor="case-title" className="label">
+        <label htmlFor="case-title" className="text-xs text-muted">
           Title
         </label>
         <input
           id="case-title"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
-          className="mt-1 w-full border border-line-strong bg-bg px-3 py-2 text-sm outline-none focus:border-accent"
+          className={`${FIELD} mt-1`}
         />
       </div>
       <div>
-        <label htmlFor="case-tags" className="label">
+        <label htmlFor="case-tags" className="text-xs text-muted">
           Tags (comma separated)
         </label>
         <input
           id="case-tags"
           value={tags}
           onChange={(e) => setTags(e.target.value)}
-          className="mono mt-1 w-full border border-line-strong bg-bg px-3 py-2 text-[13px] outline-none focus:border-accent"
+          className={`${FIELD} mono mt-1`}
         />
       </div>
       <div>
-        <label htmlFor="case-notes" className="label">
+        <label htmlFor="case-notes" className="text-xs text-muted">
           Notes
         </label>
         <textarea
@@ -98,22 +97,22 @@ function Editor({
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           rows={6}
-          className="mt-1 w-full resize-y border border-line-strong bg-bg p-3 text-sm outline-none focus:border-accent"
+          className={`${FIELD} mt-1 resize-y`}
         />
       </div>
       <div className="flex flex-wrap items-center gap-2">
-        <button type="button" className={BTN} disabled={save.isPending} onClick={() => save.mutate()}>
+        <Button size="sm" disabled={save.isPending} onClick={() => save.mutate()}>
           Save case
-        </button>
-        <button type="button" className={BTN} disabled={exp.isPending} onClick={() => exp.mutate("md")}>
+        </Button>
+        <Button size="sm" disabled={exp.isPending} onClick={() => exp.mutate("md")}>
           Export Markdown
-        </button>
-        <button type="button" className={BTN} disabled={exp.isPending} onClick={() => exp.mutate("html")}>
+        </Button>
+        <Button size="sm" disabled={exp.isPending} onClick={() => exp.mutate("html")}>
           Export HTML
-        </button>
-        <button type="button" className={`${BTN} ml-auto text-malicious`} disabled={del.isPending} onClick={() => del.mutate()}>
+        </Button>
+        <Button variant="danger" size="sm" className="ml-auto" disabled={del.isPending} onClick={() => del.mutate()}>
           Delete case
-        </button>
+        </Button>
         <p className="w-full text-xs text-muted" role="status" aria-live="polite">
           {save.isSuccess && "Case saved."}
           {save.isError && `Could not save: ${save.error.message}`}
@@ -122,24 +121,31 @@ function Editor({
       </div>
 
       <div>
-        <h3 className="label mb-2">Reports ({data.reports.length})</h3>
+        <h3 className="mb-2 text-sm font-medium">Timeline, {data.reports.length} report{data.reports.length === 1 ? "" : "s"}</h3>
         {data.reports.length === 0 && <p className="text-sm text-muted">No reports yet. Open a report and choose Add to case.</p>}
         <ul>
-          {data.reports.map((r) => (
-            <li key={r.id} className="flex items-center gap-3 border-t border-line py-1.5">
-              <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${LEVEL_BG[r.level as Level]}`} />
-              <span className="mono min-w-0 flex-1 truncate text-[13px]" title={r.ioc}>
-                {shortenMiddle(r.ioc, 40)}
-              </span>
-              <span className="label">{typeTag(r.ioc_type as IOCType)}</span>
-              <button type="button" className={BTN} onClick={() => onOpen(r.id)} aria-label={`Open report for ${r.ioc}`}>
-                Open
-              </button>
-              <button type="button" className={BTN} onClick={() => remove.mutate(r.id)} aria-label={`Remove ${r.ioc} from the case`}>
-                Remove
-              </button>
-            </li>
-          ))}
+          {[...data.reports]
+            .sort((a, b) => a.created_at.localeCompare(b.created_at))
+            .map((r) => (
+              <li key={r.id} className="flex items-center gap-3 border-t border-line py-2">
+                <span className="mono w-20 shrink-0 text-xs text-muted" title={r.created_at}>
+                  {ago(r.created_at)}
+                </span>
+                <span className="w-28 shrink-0">
+                  <LevelBadge level={r.level as Level} />
+                </span>
+                <span className="mono min-w-0 flex-1 truncate text-[13px]" title={r.ioc}>
+                  {shortenMiddle(r.ioc, 40)}
+                </span>
+                <span className="label">{typeTag(r.ioc_type as IOCType)}</span>
+                <Button size="sm" onClick={() => onOpen(r.id)} aria-label={`Open report for ${r.ioc}`}>
+                  Open
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => remove.mutate(r.id)} aria-label={`Remove ${r.ioc} from the case`}>
+                  Remove
+                </Button>
+              </li>
+            ))}
         </ul>
       </div>
     </section>
@@ -167,8 +173,8 @@ export function Cases({ onOpen }: { onOpen: (reportId: string) => void }) {
 
   return (
     <div className="grid min-h-0 gap-4 p-5 lg:grid-cols-[20rem_minmax(0,1fr)]">
-      <section aria-label="Cases" className="border border-line bg-panel">
-        <h2 className="label border-b border-line px-4 py-2.5">Investigations</h2>
+      <section aria-label="Cases" className="rounded-lg border border-line bg-panel">
+        <h2 className="border-b border-line px-4 py-3 text-sm font-semibold">Investigations</h2>
         <form
           className="flex gap-2 border-b border-line p-3"
           onSubmit={(e) => {
@@ -184,11 +190,11 @@ export function Cases({ onOpen }: { onOpen: (reportId: string) => void }) {
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="New case title"
-            className="min-w-0 flex-1 border border-line-strong bg-bg px-2 py-1.5 text-sm outline-none focus:border-accent"
+            className={`${FIELD} min-w-0 flex-1`}
           />
-          <button type="submit" className={BTN} disabled={!title.trim() || create.isPending}>
+          <Button type="submit" size="sm" disabled={!title.trim() || create.isPending}>
             Create
-          </button>
+          </Button>
         </form>
         {create.isError && (
           <p role="alert" className="px-3 py-2 text-xs text-malicious">
@@ -231,7 +237,7 @@ export function Cases({ onOpen }: { onOpen: (reportId: string) => void }) {
         </ul>
       </section>
 
-      <div className="border border-line bg-panel">
+      <div className="rounded-lg border border-line bg-panel">
         {selected ? (
           <Detail key={selected} id={selected} onOpen={onOpen} onGone={() => setSelected(null)} />
         ) : (

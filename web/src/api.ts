@@ -63,6 +63,7 @@ export const api = {
     call<CaseDetail>(`/api/cases/${encodeURIComponent(id)}/reports/${encodeURIComponent(reportId)}`, { method: "DELETE" }),
   scheduler: () => call<JobStatus[]>("/api/scheduler"),
   schedulerRun: (name: string) => call<JobStatus>(`/api/scheduler/${encodeURIComponent(name)}/run`, { method: "POST" }),
+  schedulerStart: (name: string) => call<JobStatus>(`/api/scheduler/${encodeURIComponent(name)}/start`, { method: "POST" }),
   feedsImport: (name: string, content: string) =>
     call<FeedImport>("/api/feeds/import", { method: "POST", body: JSON.stringify({ name, content }) }),
   feedsForget: (name: string) => call<FeedInfo[]>(`/api/feeds/import?name=${encodeURIComponent(name)}`, { method: "DELETE" }),

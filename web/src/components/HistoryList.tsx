@@ -19,7 +19,7 @@ export function HistoryList({ items, activeId, onSelect }: Props) {
         if (group.length === 0) return null;
         return (
           <div key={level}>
-            <h3 className="label px-3 pb-1">
+            <h3 className="px-3 pb-1 text-xs font-medium text-muted">
               {LEVEL_LABEL[level]} <span className="text-muted">({group.length})</span>
             </h3>
             <ul>
@@ -34,7 +34,7 @@ export function HistoryList({ items, activeId, onSelect }: Props) {
                   >
                     <span aria-hidden="true" className={`h-2 w-2 shrink-0 rounded-full ${LEVEL_BG[level as Level]}`} />
                     <span className="mono min-w-0 flex-1 truncate text-[13px]">{shortenMiddle(i.ioc, 26)}</span>
-                    <span className="label shrink-0">{typeTag(i.ioc_type as IOCType)}</span>
+                    <span className="mono shrink-0 text-[10px] text-muted">{typeTag(i.ioc_type as IOCType)}</span>
                   </button>
                 </li>
               ))}

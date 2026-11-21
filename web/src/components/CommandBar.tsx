@@ -1,4 +1,5 @@
 import { forwardRef } from "react";
+import { Button } from "./ui";
 
 interface Props {
   value: string;
@@ -39,13 +40,9 @@ export const CommandBar = forwardRef<HTMLInputElement, Props>(function CommandBa
         />
         <kbd className="mono hidden shrink-0 rounded-md border border-line-strong px-1.5 py-0.5 text-[10px] leading-none text-muted shadow-[0_1px_0_var(--border-strong)] sm:block">Ctrl K</kbd>
       </div>
-      <button
-        type="submit"
-        disabled={pending || !value.trim()}
-        className="h-11 shrink-0 rounded-lg bg-accent px-5 text-sm font-semibold text-on-accent shadow-[inset_0_1px_0_var(--btn-highlight),0_1px_2px_var(--btn-shadow)] transition hover:brightness-110 active:translate-y-px disabled:cursor-not-allowed disabled:bg-panel2 disabled:text-muted disabled:shadow-[inset_0_0_0_1px_var(--border)]"
-      >
+      <Button type="submit" variant="primary" className="h-11 px-5 text-sm" disabled={pending || !value.trim()}>
         {pending ? "Checking…" : "Check"}
-      </button>
+      </Button>
     </form>
   );
 });

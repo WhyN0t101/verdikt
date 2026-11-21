@@ -1,29 +1,44 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { type ReactNode, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { ago, shortenMiddle } from "../lib/format";
-import type { Level } from "../model";
+import type { JobStatus, Level } from "../model";
 import { ActivityChart } from "./ActivityChart";
 import { LEVEL_BG, LevelBadge } from "./LevelBadge";
+import { Button, FIELD, Panel } from "./ui";
 
-function Panel({ title, label, children }: { title: string; label: string; children: ReactNode }) {
+function Tile({ label, value, tone }: { label: string; value: string | number; tone?: string }) {
   return (
-    <section aria-label={label} className="border border-line bg-panel">
-      <h2 className="label border-b border-line px-4 py-2.5">{title}</h2>
-      <div className="p-4">{children}</div>
-    </section>
+    <div className="rounded-lg border border-line bg-panel px-4 py-3">
+      <div className="text-xs text-muted">{label}</div>
+      <div className={`mt-1 text-3xl font-semibold tabular-nums tracking-tight ${tone ?? ""}`}>{value}</div>
+    </div>
   );
 }
 
 const pct = (n: number, of: number) => (of === 0 ? "-" : `${Math.round((n / of) * 100)}%`);
-const BTN = "rounded border border-line-strong px-3 py-1.5 text-sm hover:border-accent disabled:opacity-50";
 
 export function Overview({ onCheck }: { onCheck: (ioc: string) => void }) {
   const qc = useQueryClient();
   const stats = useQuery({ queryKey: ["stats"], queryFn: () => api.stats(30) });
   const watch = useQuery({ queryKey: ["watchlist"], queryFn: api.watchlist });
   const feeds = useQuery({ queryKey: ["feeds"], queryFn: api.feeds });
-  const sched = useQuery({ queryKey: ["scheduler"], queryFn: api.scheduler });
+  // poll once a second while a background job runs, otherwise leave the list alone
+  const sched = useQuery({
+    queryKey: ["scheduler"],
+    queryFn: api.scheduler,
+    refetchInterval: (q) => (q.state.data?.some((j) => j.running) ? 1000 : false),
+  });
+  const watchJob = sched.data?.find((j) => j.name === "watch");
+  const watchRunning = watchJob?.running ?? false;
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    if (wasRunning.current && !watchRunning) {
+      void qc.invalidateQueries({ queryKey: ["watchlist"] });
+      void qc.invalidateQueries({ queryKey: ["stats"] });
+    }
+    wasRunning.current = watchRunning;
+  }, [watchRunning, qc]);
   const [importName, setImportName] = useState("");
   const runJob = useMutation({
     mutationFn: api.schedulerRun,
@@ -42,12 +57,10 @@ export function Overview({ onCheck }: { onCheck: (ioc: string) => void }) {
   });
   const forget = useMutation({ mutationFn: api.feedsForget, onSuccess: (list) => qc.setQueryData(["feeds"], list) });
 
+  // start returns at once with the live status; the poll above shows progress
   const recheck = useMutation({
-    mutationFn: api.recheck,
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["watchlist"] });
-      void qc.invalidateQueries({ queryKey: ["stats"] });
-    },
+    mutationFn: () => api.schedulerStart("watch"),
+    onSuccess: (job) => qc.setQueryData(["scheduler"], (all: JobStatus[] | undefined) => all?.map((j) => (j.name === job.name ? job : j))),
   });
   const remove = useMutation({
     mutationFn: api.watchRemove,
@@ -62,8 +75,17 @@ export function Overview({ onCheck }: { onCheck: (ioc: string) => void }) {
   const fb = s?.feedback;
   const judged = fb ? fb.false_positive + fb.false_negative + fb.correct : 0;
 
+  const sum = (k: "malicious" | "suspicious") => s?.by_day.reduce((n, d) => n + d[k], 0) ?? 0;
+
   return (
-    <div className="grid gap-4 p-5 lg:grid-cols-2">
+    <div className="mx-auto w-full max-w-7xl space-y-4 p-5">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Tile label={`Checks, ${s?.days ?? 30} days`} value={s?.total ?? "-"} />
+        <Tile label="Malicious" value={s ? sum("malicious") : "-"} tone="text-malicious" />
+        <Tile label="Suspicious" value={s ? sum("suspicious") : "-"} tone="text-suspicious" />
+        <Tile label="Watched indicators" value={watch.data?.entries.length ?? "-"} />
+      </div>
+      <div className="grid gap-4 lg:grid-cols-2">
       <Panel title={`Checks per day${s ? ` (${s.total} in ${s.days} days)` : ""}`} label="Activity">
         {s ? <ActivityChart data={s.by_day} /> : <div className="pixel h-24" role="status" aria-label="Loading activity" />}
       </Panel>
@@ -74,7 +96,7 @@ export function Overview({ onCheck }: { onCheck: (ioc: string) => void }) {
           <div className="overflow-x-auto">
             <table className="w-full min-w-[420px] text-left text-sm">
               <thead>
-                <tr className="label">
+                <tr className="text-xs text-muted">
                   <th className="pb-2 font-normal">Source</th>
                   <th className="pb-2 font-normal">Answered</th>
                   <th className="pb-2 font-normal">Errors</th>
@@ -102,13 +124,14 @@ export function Overview({ onCheck }: { onCheck: (ioc: string) => void }) {
 
       <Panel title="Watchlist" label="Watchlist">
         <div className="mb-3 flex flex-wrap items-center gap-3">
-          <button type="button" className={BTN} disabled={recheck.isPending || (watch.data?.entries.length ?? 0) === 0} onClick={() => recheck.mutate()}>
-            {recheck.isPending ? "Re-checking…" : "Re-check all"}
-          </button>
+          <Button size="sm" disabled={recheck.isPending || watchRunning || (watch.data?.entries.length ?? 0) === 0} onClick={() => recheck.mutate()}>
+            {watchRunning ? "Re-checking…" : "Re-check all"}
+          </Button>
           <span className="text-xs text-muted" role="status" aria-live="polite">
-            {recheck.isSuccess && (recheck.data.length === 0 ? "No verdict changed." : `${recheck.data.length} verdict(s) changed.`)}
+            {watchRunning && `Checked ${watchJob?.progress || "0"} entries so far.`}
+            {!watchRunning && recheck.isSuccess && (watchJob?.last_ok === false ? `Re-check failed: ${watchJob.last_detail}` : watchJob?.last_detail.startsWith("0 verdict") ? "No verdict changed." : watchJob?.last_detail)}
             {recheck.isError && `Re-check failed: ${recheck.error.message}`}
-            {!recheck.isSuccess && !recheck.isError && "A re-check skips the cache and uses source quota."}
+            {!watchRunning && !recheck.isSuccess && !recheck.isError && "A re-check skips the cache and uses source quota."}
           </span>
         </div>
         {watch.data && watch.data.entries.length === 0 && <p className="text-sm text-muted">Nothing watched yet. Open a report and choose Watch.</p>}
@@ -119,20 +142,15 @@ export function Overview({ onCheck }: { onCheck: (ioc: string) => void }) {
                 {shortenMiddle(e.ioc, 34)}
               </span>
               {e.last_level ? <LevelBadge level={e.last_level as Level} /> : <span className="label">not checked</span>}
-              <button
-                type="button"
-                onClick={() => remove.mutate(e.ioc)}
-                aria-label={`Stop watching ${e.ioc}`}
-                className="rounded border border-line px-2 py-0.5 text-xs text-muted hover:border-accent"
-              >
+              <Button variant="ghost" size="sm" onClick={() => remove.mutate(e.ioc)} aria-label={`Stop watching ${e.ioc}`}>
                 Remove
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
         {watch.data && watch.data.events.length > 0 && (
           <div className="mt-3 border-t border-line pt-3">
-            <h3 className="label mb-1.5">Recent changes</h3>
+            <h3 className="mb-1.5 text-xs font-medium text-muted">Recent changes</h3>
             <ul className="mono space-y-1 text-xs">
               {watch.data.events.slice(0, 6).map((ev) => (
                 <li key={ev.id}>
@@ -156,9 +174,9 @@ export function Overview({ onCheck }: { onCheck: (ioc: string) => void }) {
               <span className="label">
                 {r.reports} reports · {r.kind}
               </span>
-              <button type="button" onClick={() => onCheck(r.value)} aria-label={`Check ${r.value}`} className="rounded border border-line px-2 py-0.5 text-xs hover:border-accent">
+              <Button size="sm" onClick={() => onCheck(r.value)} aria-label={`Check ${r.value}`}>
                 Check
-              </button>
+              </Button>
             </li>
           ))}
         </ul>
@@ -177,7 +195,7 @@ export function Overview({ onCheck }: { onCheck: (ioc: string) => void }) {
               ] as const
             ).map(([k, v]) => (
               <div key={k}>
-                <dt className="label">{k}</dt>
+                <dt className="text-xs text-muted">{k}</dt>
                 <dd className="mono mt-1 text-lg">{v}</dd>
               </div>
             ))}
@@ -198,15 +216,9 @@ export function Overview({ onCheck }: { onCheck: (ioc: string) => void }) {
                 {j.last_run ? `last ${ago(j.last_run)}: ${j.last_detail}` : "not run yet"}
                 {j.next_run && ` · next ${ago(j.next_run).replace(" ago", "")}`}
               </span>
-              <button
-                type="button"
-                disabled={runJob.isPending}
-                onClick={() => runJob.mutate(j.name)}
-                aria-label={`Run the ${j.name} job now`}
-                className="ml-auto rounded border border-line-strong px-2.5 py-1 text-xs hover:border-accent disabled:opacity-50"
-              >
+              <Button size="sm" className="ml-auto" disabled={runJob.isPending} onClick={() => runJob.mutate(j.name)} aria-label={`Run the ${j.name} job now`}>
                 Run now
-              </button>
+                </Button>
             </li>
           ))}
         </ul>
@@ -219,9 +231,9 @@ export function Overview({ onCheck }: { onCheck: (ioc: string) => void }) {
 
       <Panel title="Local data feeds" label="Local feeds">
         <div className="mb-3 flex flex-wrap items-center gap-3">
-          <button type="button" className={BTN} disabled={update.isPending} onClick={() => update.mutate()}>
+          <Button size="sm" disabled={update.isPending} onClick={() => update.mutate()}>
             {update.isPending ? "Downloading…" : "Update feeds"}
-          </button>
+          </Button>
           <span className="text-xs text-muted" role="status" aria-live="polite">
             {update.isSuccess && `${update.data.filter((u) => u.ok).length}/${update.data.length} feeds updated.`}
             {update.isError && `Update failed: ${update.error.message}`}
@@ -237,20 +249,15 @@ export function Overview({ onCheck }: { onCheck: (ioc: string) => void }) {
                 {f.count.toLocaleString()} entries · {ago(f.fetched_at)}
               </span>
               {f.name.startsWith("import:") && (
-                <button
-                  type="button"
-                  onClick={() => forget.mutate(f.name.slice("import:".length))}
-                  aria-label={`Forget imported list ${f.name.slice("import:".length)}`}
-                  className="rounded border border-line px-2 py-0.5 text-[11px] hover:border-accent"
-                >
+                <Button variant="ghost" size="sm" onClick={() => forget.mutate(f.name.slice("import:".length))} aria-label={`Forget imported list ${f.name.slice("import:".length)}`}>
                   Forget
-                </button>
+                </Button>
               )}
             </li>
           ))}
         </ul>
         <div className="mt-4 space-y-2 border-t border-line pt-3">
-          <h3 className="label">Import MISP or STIX file</h3>
+          <h3 className="text-sm font-medium">Import MISP or STIX file</h3>
           <div className="flex flex-wrap items-center gap-2">
             <label htmlFor="import-name" className="sr-only">
               Name for the imported list
@@ -260,7 +267,7 @@ export function Overview({ onCheck }: { onCheck: (ioc: string) => void }) {
               value={importName}
               onChange={(e) => setImportName(e.target.value)}
               placeholder="list-name"
-              className="mono w-40 border border-line-strong bg-bg px-2 py-1 text-xs outline-none focus:border-accent"
+              className={`${FIELD} mono w-40`}
             />
             <label htmlFor="import-file" className="sr-only">
               MISP event or STIX bundle file
@@ -285,6 +292,7 @@ export function Overview({ onCheck }: { onCheck: (ioc: string) => void }) {
           </p>
         </div>
       </Panel>
+      </div>
     </div>
   );
 }

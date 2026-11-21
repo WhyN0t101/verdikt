@@ -31,7 +31,7 @@ function Why({ r }: { r: SourceResult }) {
   if (!r.role) return null;
   return (
     <details className="mt-1 text-xs">
-      <summary className="label cursor-pointer">Why</summary>
+      <summary className="cursor-pointer text-muted hover:text-ink">Why this counted</summary>
       <div className="mt-1 space-y-1 text-muted">
         <p>{ROLE_TEXT[r.role] ?? r.role}</p>
         <p className="mono">Weight in confidence: {r.weight}</p>
@@ -54,7 +54,7 @@ export function SourceTable({ report, pending }: Props) {
     <section aria-label="Sources" className="overflow-auto bg-panel">
       <table className="w-full min-w-[520px] text-left text-sm">
         <thead>
-          <tr className="label sticky top-0 bg-panel">
+          <tr className="sticky top-0 bg-panel text-xs text-muted">
             <th className="px-3 py-2 font-normal">Source</th>
             <th className="px-3 py-2 font-normal">Level</th>
             <th className="px-3 py-2 font-normal">Result</th>
@@ -65,7 +65,7 @@ export function SourceTable({ report, pending }: Props) {
           {pending
             ? pending.map((s) => <Skeleton key={s.name} name={s.name} />)
             : report?.results.map((r) => (
-                <tr key={r.source} className="border-t border-line align-top">
+                <tr key={r.source} className="border-t border-line align-top hover:bg-panel2">
                   <td className={`mono border-l-2 px-3 py-2 ${r.status === "ok" ? LEVEL_BORDER[r.level] : "border-transparent"}`}>
                     {r.source}
                     {r.cached && <span className="label ml-2 border border-line px-1">cached</span>}

@@ -2,13 +2,14 @@ import { useState } from "react";
 import { defang, formatDuration, typeTag } from "../lib/format";
 import type { Report } from "../model";
 import { LEVEL_BG, LEVEL_BORDER, LevelBadge } from "./LevelBadge";
+import { Button, Chip, SectionTitle } from "./ui";
 
 function CopyButton({ text }: { text: string }) {
   const [done, setDone] = useState(false);
   return (
-    <button
-      type="button"
-      className="label rounded border border-line px-1.5 py-0.5 hover:border-accent"
+    <Button
+      size="sm"
+      aria-label="Copy defanged IOC"
       onClick={() => {
         navigator.clipboard
           .writeText(text)
@@ -18,51 +19,55 @@ function CopyButton({ text }: { text: string }) {
           })
           .catch(() => setDone(false));
       }}
-      aria-label="Copy defanged IOC"
     >
       {done ? "Copied" : "Copy defanged"}
-    </button>
+    </Button>
   );
 }
 
-/** One square per source; filled squares are the sources that agree with the verdict. */
+/** One segment per source; filled segments are the sources that agree with the verdict. */
 function Confidence({ report }: { report: Report }) {
   return (
-    <span className="flex items-center gap-2">
-      <span className="flex gap-0.5" aria-hidden="true">
+    <div>
+      <div className="flex gap-1" aria-hidden="true">
         {Array.from({ length: report.total }, (_, i) => (
-          <span key={i} className={`h-2.5 w-2.5 rounded-[2px] ${i < report.agreeing ? LEVEL_BG[report.level] : "border border-line-strong"}`} />
+          <span key={i} className={`h-1.5 flex-1 rounded-full ${i < report.agreeing ? LEVEL_BG[report.level] : "bg-line-strong"}`} />
         ))}
-      </span>
-      <span className="mono text-xs text-muted">
-        {report.agreeing}/{report.total} sources agree
-      </span>
-    </span>
+      </div>
+      <p className="mono mt-1.5 text-xs text-muted">
+        {report.agreeing} of {report.total} sources agree · {report.confidence} confidence
+      </p>
+    </div>
   );
 }
 
-/** Verdict overlay on the viewport: the answer first, the evidence one glance below. */
-export function VerdictHud({ report }: { report: Report }) {
+/** Verdict overlay on the viewport: the answer in display type, the evidence one glance below. */
+export function VerdictHud({ report, onRecheck, busy }: { report: Report; onRecheck: () => void; busy: boolean }) {
   return (
-    <section aria-label="Verdict" className={`hud w-full max-w-md border-l-4 p-4 ${LEVEL_BORDER[report.level]}`}>
-      <LevelBadge level={report.level} size="lg" />
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <span className="mono min-w-0 break-all text-base">{report.ioc}</span>
-        <span className="label rounded border border-line px-1.5 py-0.5">{typeTag(report.ioc_type)}</span>
-        <CopyButton text={defang(report.ioc)} />
+    <section aria-label="Verdict" className={`hud verdict-in w-full max-w-md border-l-4 p-5 ${LEVEL_BORDER[report.level]}`}>
+      <LevelBadge level={report.level} size="xl" />
+      <div className="mt-3 flex items-start gap-2">
+        <span className="mono min-w-0 flex-1 break-all text-sm">{report.ioc}</span>
+        <Chip>{typeTag(report.ioc_type)}</Chip>
       </div>
-      <div className="mt-3">
+      <div className="mt-4">
         <Confidence report={report} />
       </div>
       {report.reasons.length > 0 && (
-        <ul className="mt-3 space-y-1 border-t border-line pt-3">
+        <ul className="mt-4 space-y-1 border-t border-line pt-3">
           {report.reasons.map((r, i) => (
-            <li key={i} className="mono text-xs text-muted">
+            <li key={i} className="text-sm text-muted">
               {r}
             </li>
           ))}
         </ul>
       )}
+      <div className="mt-4 flex flex-wrap gap-2">
+        <CopyButton text={defang(report.ioc)} />
+        <Button size="sm" disabled={busy} onClick={onRecheck} title="Query every source again, ignoring cached answers. Uses source quota.">
+          Re-check, skip cache
+        </Button>
+      </div>
     </section>
   );
 }
@@ -81,13 +86,13 @@ export function Diagnostics({ report }: { report: Report | null }) {
       ]
     : [];
   return (
-    <section aria-label="Diagnostics" className="border-b border-line">
-      <h2 className="label px-4 py-2.5">Diagnostics</h2>
+    <section aria-label="Diagnostics" className="border-b border-line pb-1">
+      <SectionTitle>Diagnostics</SectionTitle>
       {report ? (
-        <dl className="px-4 pb-3">
+        <dl className="px-4 pb-2 pt-1">
           {rows.map(([k, v]) => (
             <div key={k} className="flex items-baseline justify-between gap-4 py-1">
-              <dt className="label shrink-0">{k}</dt>
+              <dt className="shrink-0 text-xs text-muted">{k}</dt>
               <dd className="mono min-w-0 truncate text-xs" title={v}>
                 {v}
               </dd>

@@ -49,6 +49,12 @@ body::before {
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .7 0 0 0 0 .65 0 0 0 0 .9 0 0 0 1.2 -.4'/%3E%3C/filter%3E%3Crect width='120' height='120' filter='url(%23n)'/%3E%3C/svg%3E");
 }
 
+/* circle grid from the palette reference, light theme only */
+:root[data-theme="light"] body {
+  background-image: radial-gradient(circle at 50% 0, transparent 0 220px, var(--grid) 220px 221px, transparent 221px);
+  background-size: 440px 440px;
+}
+
 :focus-visible {
   outline: 2px solid var(--focus);
   outline-offset: 2px;
@@ -85,6 +91,19 @@ body::before {
   background-image: linear-gradient(90deg, var(--border-strong) 0 8px, transparent 8px 12px);
   background-size: 12px 100%;
   animation: dissolve 1.2s steps(6) infinite;
+}
+
+/* the one gradient in the app: the globe from the palette reference, on the empty state only */
+.sphere {
+  width: 88px;
+  height: 88px;
+  border-radius: 9999px;
+  background:
+    repeating-linear-gradient(135deg, transparent 0 5px, rgb(255 255 255 / 0.1) 5px 6px),
+    radial-gradient(circle at 34% 28%, var(--violet-300), var(--violet-500) 42%, var(--violet-600) 72%, var(--plum-900));
+  box-shadow:
+    0 0 48px rgb(106 76 245 / 0.45),
+    inset 0 0 0 1px rgb(255 255 255 / 0.18);
 }
 
 /* viewport: corner brackets frame the map like a targeting display */
@@ -156,9 +175,25 @@ body::before {
   animation: pulse-ring 1.8s ease-out infinite;
 }
 
+/* verdict arrives once, resolving in coarse steps like the pixel motif */
+@keyframes verdict-in {
+  from {
+    opacity: 0;
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    opacity: 1;
+    clip-path: inset(0);
+  }
+}
+.verdict-in {
+  animation: verdict-in 420ms steps(8) both;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .pixel,
-  .pulse {
+  .pulse,
+  .verdict-in {
     animation: none;
   }
   .sweep {

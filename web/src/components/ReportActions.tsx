@@ -5,19 +5,19 @@ import { downloadText } from "../lib/csv";
 import { defang, shortenMiddle } from "../lib/format";
 import type { CveInfo, FeedbackLabel, Report } from "../model";
 import { LEVEL_BG } from "./LevelBadge";
+import { Button, FIELD, SectionTitle } from "./ui";
 
 const FEEDBACK: { label: FeedbackLabel; text: string }[] = [
   { label: "false_positive", text: "False positive" },
   { label: "false_negative", text: "False negative" },
 ];
-const BTN = "rounded border border-line-strong px-2 py-1 text-xs hover:border-accent disabled:opacity-50";
 
 /** CVEs found on the host with CISA KEV and EPSS context. Context only, never a verdict input. */
 function Vulnerabilities({ cves }: { cves: CveInfo[] }) {
   if (cves.length === 0) return null;
   return (
     <section aria-label="Vulnerabilities" className="border-b border-line">
-      <h2 className="label px-4 py-2.5">Vulnerabilities</h2>
+      <SectionTitle>Vulnerabilities</SectionTitle>
       <ul className="pb-2">
         {cves.map((c) => (
           <li key={c.id} className="px-4 py-1.5">
@@ -30,8 +30,8 @@ function Vulnerabilities({ cves }: { cves: CveInfo[] }) {
               >
                 {c.id}
               </a>
-              {c.kev && <span className="label border border-malicious px-1 text-malicious">KEV</span>}
-              {c.ransomware && <span className="label border border-suspicious px-1 text-suspicious">Ransomware</span>}
+              {c.kev && <span className="mono rounded border border-malicious px-1.5 text-[11px] leading-5 text-malicious">KEV</span>}
+              {c.ransomware && <span className="mono rounded border border-suspicious px-1.5 text-[11px] leading-5 text-suspicious">Ransomware</span>}
               {c.epss !== null && c.epss !== undefined && (
                 <span className="mono ml-auto text-[11px] text-muted" title="Probability of exploitation in the next 30 days (EPSS)">
                   EPSS {(c.epss * 100).toFixed(1)}%
@@ -61,7 +61,7 @@ export function ReportActions({ report, onOpen }: { report: Report; onOpen: (id:
   const refreshCases = () => void qc.invalidateQueries({ queryKey: ["cases"] });
   const addToCase = useMutation({ mutationFn: (id: string) => api.caseAdd(id, report.id), onSuccess: refreshCases });
   const newCase = useMutation({
-    mutationFn: async () => api.caseAdd((await api.caseCreate(`Investigation: ${report.ioc}`)).id, report.id),
+    mutationFn: async () => api.caseAdd((await api.caseCreate(`Investigation: ${defang(report.ioc)}`)).id, report.id),
     onSuccess: refreshCases,
   });
   const exp = useMutation({
@@ -84,7 +84,7 @@ export function ReportActions({ report, onOpen }: { report: Report; onOpen: (id:
     <>
       <Vulnerabilities cves={report.cves} />
       <section aria-label="Report actions" className="border-b border-line">
-        <h2 className="label px-4 py-2.5">Seen before</h2>
+        <SectionTitle>Seen before</SectionTitle>
         {report.seen_before.length === 0 ? (
           <p className="px-4 pb-3 text-sm text-muted">No earlier report shares this indicator or its infrastructure.</p>
         ) : (
@@ -112,25 +112,25 @@ export function ReportActions({ report, onOpen }: { report: Report; onOpen: (id:
 
         <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3">
           {FEEDBACK.map((f) => (
-            <button key={f.label} type="button" disabled={feedback.isPending} onClick={() => feedback.mutate(f.label)} className={BTN}>
+            <Button key={f.label} size="sm" disabled={feedback.isPending} onClick={() => feedback.mutate(f.label)}>
               {f.text}
-            </button>
+            </Button>
           ))}
-          <button type="button" disabled={watching || watchAdd.isPending} onClick={() => watchAdd.mutate()} className={BTN}>
+          <Button size="sm" disabled={watching || watchAdd.isPending} onClick={() => watchAdd.mutate()}>
             {watching ? "Watching" : "Watch"}
-          </button>
-          <button type="button" disabled={stix.isPending} onClick={() => stix.mutate()} className={BTN}>
+          </Button>
+          <Button size="sm" disabled={stix.isPending} onClick={() => stix.mutate()}>
             Export STIX
-          </button>
-          <button type="button" disabled={exp.isPending} onClick={() => exp.mutate("misp")} className={BTN}>
+          </Button>
+          <Button size="sm" disabled={exp.isPending} onClick={() => exp.mutate("misp")}>
             Export MISP
-          </button>
-          <button type="button" disabled={exp.isPending} onClick={() => exp.mutate("md")} className={BTN}>
+          </Button>
+          <Button size="sm" disabled={exp.isPending} onClick={() => exp.mutate("md")}>
             Report (Markdown)
-          </button>
-          <button type="button" disabled={exp.isPending} onClick={() => exp.mutate("html")} className={BTN}>
+          </Button>
+          <Button size="sm" disabled={exp.isPending} onClick={() => exp.mutate("html")}>
             Report (HTML)
-          </button>
+          </Button>
           <div className="flex w-full items-center gap-2">
             <label htmlFor="add-case" className="sr-only">
               Add to case
@@ -139,7 +139,7 @@ export function ReportActions({ report, onOpen }: { report: Report; onOpen: (id:
               id="add-case"
               value={caseId}
               onChange={(e) => setCaseId(e.target.value)}
-              className="min-w-0 flex-1 border border-line-strong bg-bg px-2 py-1 text-xs"
+              className={`${FIELD} h-7 min-w-0 flex-1 py-0 text-xs`}
             >
               <option value="">Add to case…</option>
               {cases.data?.map((c) => (
@@ -148,12 +148,12 @@ export function ReportActions({ report, onOpen }: { report: Report; onOpen: (id:
                 </option>
               ))}
             </select>
-            <button type="button" disabled={!caseId || addToCase.isPending} onClick={() => addToCase.mutate(caseId)} className={BTN}>
+            <Button size="sm" disabled={!caseId || addToCase.isPending} onClick={() => addToCase.mutate(caseId)}>
               Add
-            </button>
-            <button type="button" disabled={newCase.isPending} onClick={() => newCase.mutate()} className={BTN}>
+            </Button>
+            <Button size="sm" disabled={newCase.isPending} onClick={() => newCase.mutate()}>
               New case
-            </button>
+            </Button>
           </div>
           <p className="w-full text-xs text-muted" role="status" aria-live="polite">
             {feedback.isSuccess && "Feedback recorded."}

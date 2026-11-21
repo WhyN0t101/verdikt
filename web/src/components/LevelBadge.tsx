@@ -26,15 +26,16 @@ export const LEVEL_BORDER: Record<Level, string> = {
 };
 
 /** Level is always icon + text, never colour alone. */
-export function LevelBadge({ level, size = "sm" }: { level: Level; size?: "sm" | "lg" }) {
+export function LevelBadge({ level, size = "sm" }: { level: Level; size?: "sm" | "lg" | "xl" }) {
   const big = size === "lg";
+  const huge = size === "xl";
   return (
     <span
-      className={`inline-flex items-center gap-1.5 font-mono font-semibold uppercase tracking-wider ${LEVEL_TEXT[level]} ${big ? "text-lg" : "text-xs"}`}
+      className={`inline-flex items-center gap-1.5 font-semibold ${LEVEL_TEXT[level]} ${huge ? "font-sans text-4xl tracking-tight" : `font-mono uppercase tracking-wider ${big ? "text-lg" : "text-xs"}`}`}
     >
       <span
         aria-hidden="true"
-        className={`grid place-items-center rounded-sm border ${LEVEL_BORDER[level]} ${big ? "h-6 w-6 text-sm" : "h-4 w-4 text-[10px]"}`}
+        className={`grid place-items-center rounded-sm border ${LEVEL_BORDER[level]} ${huge ? "h-9 w-9 rounded-md border-2 text-xl" : big ? "h-6 w-6 text-sm" : "h-4 w-4 text-[10px]"}`}
       >
         {LEVEL_ICON[level]}
       </span>

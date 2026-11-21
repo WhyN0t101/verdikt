@@ -5,6 +5,7 @@ import { downloadText, toCsv } from "../lib/csv";
 import { shortenMiddle, typeTag } from "../lib/format";
 import type { Extraction, IOCType, Report } from "../model";
 import { LevelBadge } from "./LevelBadge";
+import { Button, FIELD } from "./ui";
 
 type Row = {
   value: string;
@@ -66,8 +67,8 @@ export function Batch({ onOpen }: { onOpen: (id: string) => void }) {
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-4 p-5">
-      <section aria-label="Paste text" className="border border-line bg-panel">
-        <h2 className="label border-b border-line px-4 py-2.5">Paste a ticket, an email or a list</h2>
+      <section aria-label="Paste text" className="rounded-lg border border-line bg-panel">
+        <h2 className="border-b border-line px-4 py-3 text-sm font-semibold">Paste a ticket, an email or a list</h2>
         <div className="space-y-3 p-4">
           <label htmlFor="batch-text" className="sr-only">
             Text containing indicators
@@ -79,17 +80,12 @@ export function Batch({ onOpen }: { onOpen: (id: string) => void }) {
             rows={6}
             spellCheck={false}
             placeholder="Any text. IPs, domains, URLs and hashes are found, including defanged ones like hxxp://evil[.]com."
-            className="mono w-full resize-y border border-line-strong bg-bg p-3 text-[13px] outline-none focus:border-accent"
+            className={`${FIELD} mono resize-y p-3 text-[13px]`}
           />
           <div className="flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              disabled={!text.trim() || extract.isPending || running}
-              onClick={() => extract.mutate()}
-              className="h-10 rounded-lg bg-accent px-4 text-sm font-semibold text-on-accent disabled:opacity-50"
-            >
+            <Button variant="primary" disabled={!text.trim() || extract.isPending || running} onClick={() => extract.mutate()}>
               Extract indicators
-            </button>
+            </Button>
             {extract.isError && (
               <span role="alert" className="text-sm text-malicious">
                 {extract.error.message}
@@ -100,28 +96,23 @@ export function Batch({ onOpen }: { onOpen: (id: string) => void }) {
       </section>
 
       {found && (
-        <section aria-label="Batch results" className="border border-line bg-panel">
+        <section aria-label="Batch results" className="rounded-lg border border-line bg-panel">
           <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-2.5">
-            <h2 className="label mr-auto">
+            <h2 className="mr-auto text-sm font-semibold">
               {rows.length} indicator{rows.length === 1 ? "" : "s"} found · {done} checked
             </h2>
             {running ? (
-              <button type="button" onClick={() => (stop.current = true)} className="rounded border border-line-strong px-3 py-1.5 text-sm hover:border-accent">
+              <Button size="sm" onClick={() => (stop.current = true)}>
                 Stop
-              </button>
+              </Button>
             ) : (
-              <button
-                type="button"
-                disabled={rows.length === 0 || done === rows.length}
-                onClick={() => void runAll()}
-                className="rounded border border-line-strong px-3 py-1.5 text-sm hover:border-accent disabled:opacity-50"
-              >
+              <Button size="sm" variant="primary" disabled={rows.length === 0 || done === rows.length} onClick={() => void runAll()}>
                 Check all {rows.length - done}
-              </button>
+              </Button>
             )}
-            <button type="button" disabled={done === 0} onClick={exportCsv} className="rounded border border-line-strong px-3 py-1.5 text-sm hover:border-accent disabled:opacity-50">
+            <Button size="sm" disabled={done === 0} onClick={exportCsv}>
               Export CSV
-            </button>
+            </Button>
           </div>
 
           {rows.length === 0 && <p className="p-4 text-sm text-muted">No indicators found in that text.</p>}
@@ -130,7 +121,7 @@ export function Batch({ onOpen }: { onOpen: (id: string) => void }) {
             <div className="overflow-x-auto">
               <table className="w-full min-w-[560px] text-left text-sm">
                 <thead>
-                  <tr className="label">
+                  <tr className="text-xs text-muted">
                     <th className="px-4 py-2 font-normal">Indicator</th>
                     <th className="px-2 py-2 font-normal">Type</th>
                     <th className="px-2 py-2 font-normal">Verdict</th>
@@ -154,9 +145,9 @@ export function Batch({ onOpen }: { onOpen: (id: string) => void }) {
                       <td className="mono px-2 text-[13px]">{r.report?.confidence ?? ""}</td>
                       <td className="px-4 text-right">
                         {r.report && (
-                          <button type="button" onClick={() => onOpen(r.report?.id ?? "")} className="text-accent-text hover:underline" aria-label={`Open report for ${r.value}`}>
+                          <Button variant="ghost" size="sm" onClick={() => onOpen(r.report?.id ?? "")} aria-label={`Open report for ${r.value}`}>
                             Open
-                          </button>
+                          </Button>
                         )}
                       </td>
                     </tr>

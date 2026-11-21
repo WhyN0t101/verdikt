@@ -1,13 +1,14 @@
 import { clock } from "../lib/format";
 import type { Report } from "../model";
 import { LEVEL_BORDER, LEVEL_TEXT } from "./LevelBadge";
+import { SectionTitle } from "./ui";
 
 /** One line per source answer, left border = row level. */
 export function LogStream({ report }: { report: Report | null }) {
   const rows = report ? [...report.results].sort((a, b) => a.fetched_at.localeCompare(b.fetched_at)) : [];
   return (
     <section aria-label="Source log" className="border-b border-line">
-      <h2 className="label px-4 py-2.5">Source log</h2>
+      <SectionTitle>Source log</SectionTitle>
       {rows.length === 0 ? (
         <p className="px-4 pb-3 text-sm text-muted">Source answers appear here as a check completes.</p>
       ) : (

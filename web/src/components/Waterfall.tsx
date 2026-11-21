@@ -1,6 +1,7 @@
 import { formatDuration } from "../lib/format";
 import type { Report } from "../model";
 import { LEVEL_BG } from "./LevelBadge";
+import { SectionTitle } from "./ui";
 
 /** One lane per source: where its request started and how long it took, on a shared time axis. */
 export function Waterfall({ report }: { report: Report | null }) {
@@ -8,10 +9,7 @@ export function Waterfall({ report }: { report: Report | null }) {
   const total = Math.max(report.duration_ms, ...report.results.map((r) => r.started_ms + r.duration_ms), 1);
   return (
     <section aria-label="Timeline" className="border-b border-line">
-      <h2 className="label flex justify-between px-4 py-2.5">
-        <span>Timeline</span>
-        <span>{formatDuration(total)}</span>
-      </h2>
+      <SectionTitle right={formatDuration(total)}>Timeline</SectionTitle>
       <ol className="space-y-1.5 px-4 pb-4">
         {report.results.map((r) => {
           const left = (r.started_ms / total) * 100;

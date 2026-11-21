@@ -8,6 +8,7 @@ import { LevelBadge } from "./components/LevelBadge";
 import { Batch } from "./components/Batch";
 import { Cases } from "./components/Cases";
 import { Logo } from "./components/Logo";
+import { Button, Segmented, SectionTitle } from "./components/ui";
 import { LogStream } from "./components/LogStream";
 import { MapView } from "./components/MapView";
 import { Overview } from "./components/Overview";
@@ -61,6 +62,7 @@ function Readout({ label, value }: { label: string; value: string }) {
 export default function App() {
   const qc = useQueryClient();
   const input = useRef<HTMLInputElement>(null);
+  const reportRef = useRef<string | null>(null);
   const [value, setValue] = useState("");
   const [report, setReport] = useState<Report | null>(null);
   const [tab, setTab] = useState<Tab>("map");
@@ -81,7 +83,7 @@ export default function App() {
   const sources = useQuery({ queryKey: ["sources"], queryFn: api.sources });
 
   const check = useMutation({
-    mutationFn: (ioc: string) => api.check(ioc),
+    mutationFn: ({ ioc, fresh }: { ioc: string; fresh: boolean }) => api.check(ioc, fresh),
     onSuccess: (r) => {
       setOpenError(null);
       setReport(r);
@@ -91,11 +93,11 @@ export default function App() {
   });
 
   const run = useCallback(
-    (ioc: string) => {
+    (ioc: string, fresh = false) => {
       if (check.isPending) return; // a late answer to the first check must not replace the second
       setValue(ioc);
       setView("check");
-      check.mutate(ioc);
+      check.mutate({ ioc, fresh });
     },
     [check],
   );
@@ -122,8 +124,8 @@ export default function App() {
       }
       const typing = e.target instanceof HTMLElement && ["INPUT", "TEXTAREA"].includes(e.target.tagName);
       if (e.key === "Escape") {
-        setValue("");
-        input.current?.focus();
+        if (e.target === input.current) setValue("");
+        else input.current?.focus();
       } else if (!typing && !e.ctrlKey && !e.metaKey && !e.altKey) {
         const t = TABS.find((x) => x.key === e.key);
         if (t) setTab(t.id);
@@ -132,6 +134,25 @@ export default function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  // deep link: #/report/<id>/<tab> mirrors the open report and tab, so reload and back/forward work
+  useEffect(() => {
+    const fromHash = () => {
+      const m = /^#\/report\/([^/]+)(?:\/(map|graph|raw))?$/.exec(location.hash);
+      if (!m) return;
+      if (m[2]) setTab(m[2] as Tab);
+      if (m[1] && m[1] !== reportRef.current) void open(decodeURIComponent(m[1]));
+    };
+    fromHash();
+    window.addEventListener("hashchange", fromHash);
+    return () => window.removeEventListener("hashchange", fromHash);
+  }, [open]);
+  useEffect(() => {
+    reportRef.current = report?.id ?? null;
+    if (!report) return;
+    const next = `#/report/${encodeURIComponent(report.id)}/${tab}`;
+    if (location.hash !== next) location.hash = next;
+  }, [report, tab]);
 
   const vt = sources.data?.find((s) => s.name === "virustotal");
   const enabled = sources.data?.filter((s) => s.enabled) ?? [];
@@ -145,16 +166,13 @@ export default function App() {
     <div className="relative flex min-h-full flex-col lg:h-full">
       <header className="flex flex-wrap items-center gap-x-5 gap-y-3 border-b border-line bg-panel px-5 py-3">
         <Logo />
-        <CommandBar ref={input} value={value} pending={check.isPending} onChange={setValue} onSubmit={() => {
-            setView("check");
-            check.mutate(value);
-          }} />
+        <Segmented role="nav" label="Views" items={VIEWS} value={view} onChange={setView} />
+        <CommandBar ref={input} value={value} pending={check.isPending} onChange={setValue} onSubmit={() => run(value)} />
         <div className="ml-auto flex items-center gap-4 sm:ml-0">
           {report && <Readout label="Last check" value={formatDuration(report.duration_ms)} />}
           {vt && <Readout label="VirusTotal" value={formatQuota(vt.used_today, vt.daily_budget)} />}
-          <button
-            type="button"
-            className="grid h-9 w-9 place-items-center rounded-lg border border-line-strong text-muted transition-colors hover:border-accent hover:text-ink"
+          <Button
+            className="w-9 px-0"
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
             aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
           >
@@ -168,24 +186,10 @@ export default function App() {
                 <path d="M16.5 11.5A6.5 6.5 0 0 1 8.5 3.5a6.5 6.5 0 1 0 8 8z" />
               )}
             </svg>
-          </button>
+                    </Button>
         </div>
       </header>
 
-
-      <nav aria-label="Views" className="flex gap-1 border-b border-line bg-panel px-5">
-        {VIEWS.map((v) => (
-          <button
-            key={v.id}
-            type="button"
-            aria-current={view === v.id ? "page" : undefined}
-            onClick={() => setView(v.id)}
-            className={`-mb-px border-b-2 px-3 py-2 text-sm ${view === v.id ? "border-accent text-ink" : "border-transparent text-muted hover:text-ink"}`}
-          >
-            {v.label}
-          </button>
-        ))}
-      </nav>
 
       {view === "overview" && (
         <div className="min-h-0 flex-1 overflow-auto">
@@ -205,7 +209,7 @@ export default function App() {
 
       <div hidden={view !== "check"} className="grid min-h-0 flex-1 lg:grid-cols-[14rem_minmax(0,1fr)] xl:grid-cols-[14rem_minmax(0,1fr)_20rem]">
         <aside className="order-3 border-t border-line bg-panel py-2 lg:order-none lg:overflow-y-auto lg:border-r lg:border-t-0">
-          <h2 className="label px-4 pb-2 pt-1">History</h2>
+          <h2 className="px-4 pb-2 pt-2 text-sm font-semibold">History</h2>
           <HistoryList items={history.data ?? []} activeId={report?.id ?? null} onSelect={(id) => void open(id)} />
         </aside>
 
@@ -258,7 +262,7 @@ export default function App() {
               <>
                 {tab === "map" ? (
                   <div className="absolute bottom-4 left-4 z-10 w-[calc(100%-2rem)] max-w-md">
-                    <VerdictHud report={report} />
+                    <VerdictHud report={report} onRecheck={() => run(report.ioc, true)} busy={check.isPending} />
                   </div>
                 ) : (
                   <section aria-label="Verdict" className="hud absolute left-4 top-14 z-10 flex items-center gap-3 px-3 py-2 sm:top-4">
@@ -266,20 +270,14 @@ export default function App() {
                     <span className="mono text-xs">{report.ioc}</span>
                   </section>
                 )}
-                <div role="tablist" className="hud absolute right-4 top-4 z-10 flex">
-                  {TABS.map((t) => (
-                    <button
-                      key={t.id}
-                      role="tab"
-                      type="button"
-                      aria-selected={tab === t.id}
-                      onClick={() => setTab(t.id)}
-                      className={`border-b-2 px-3 py-1.5 text-sm ${tab === t.id ? "border-accent text-ink" : "border-transparent text-muted"}`}
-                    >
-                      {t.label} <span className="label">{t.key}</span>
-                    </button>
-                  ))}
-                </div>
+                <Segmented
+                  role="tab"
+                  label="Visualisation"
+                  className="hud absolute right-4 top-4 z-10"
+                  items={TABS.map((t) => ({ id: t.id, label: t.label, hint: t.key }))}
+                  value={tab}
+                  onChange={setTab}
+                />
                 {tab === "map" && (
                   <p className="mono absolute left-4 top-14 z-10 max-w-sm text-xs text-muted sm:top-4">
                     {report.geo.length === 0
@@ -305,7 +303,7 @@ export default function App() {
           <LogStream report={check.isPending ? null : report} />
           {quotas.length > 0 && (
             <section aria-label="Daily quota">
-              <h2 className="label px-4 py-2.5">Daily quota</h2>
+              <SectionTitle>Daily quota</SectionTitle>
               <ul className="space-y-2 px-4 pb-4">
                 {quotas.map((s) => {
                   const pct = Math.min(100, (s.used_today / (s.daily_budget ?? 1)) * 100);
