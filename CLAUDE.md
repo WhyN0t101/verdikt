@@ -1,6 +1,6 @@
 # verdikt
 
-IOC triage tool. Takes an IP, domain, URL or hash, queries threat-intel sources in parallel, returns a verdict, optionally notifies Slack/Telegram, and shows results in a local browser UI (map + graph).
+IOC triage tool. Takes an IP, domain, URL or hash, queries threat-intel sources in parallel, returns a verdict, optionally notifies Slack, Telegram, Discord, Teams or email, and shows results in a local browser UI (map + graph).
 
 **`PLAN.md` is the spec.** Read the relevant section before starting a milestone. If code and plan disagree, stop and ask; update `PLAN.md` in the same change when a decision changes.
 
@@ -31,14 +31,14 @@ cd web && npm run lint && npm run typecheck && npm test
 - `Report` has `schema_version`. Bump it on any breaking field change and regenerate frontend types (`npm run gen:types` from `/openapi.json`). Never hand-edit generated types.
 - One shared `httpx.AsyncClient`. No `requests`, no `aiohttp`, no vendor SDKs (`vt-py` etc.).
 - `verdict.decide()` is a pure function: no I/O, no clock, no randomness. It sets every row `level` and the final verdict. Sources never set `level`.
-- Context-only sources (InternetDB, GreyNoise, geo) get row level INFO and never count toward `min_sources_for_safe`. GreyNoise only acts through `benign_override`.
+- Context-only sources (the `context_only` list in `rules.yaml`: `internetdb`, `greynoise`, `otx`, `urlscan`, `crtsh`, `passivedns`) get row level INFO and never count toward `min_sources_for_safe`. `benign_override` (greynoise `riot`, hashlookup `known_good`, localfeeds `top_site`) only downgrades SUSPICIOUS to SAFE and never touches MALICIOUS.
 - `rules.yaml` is plain YAML structure validated by pydantic. Never add a string expression parser or `eval`.
 - Exit codes: 0 SAFE, 1 error, 2 usage (Click), 10 SUSPICIOUS, 11 MALICIOUS, 12 UNKNOWN. Don't reuse 1 or 2 for verdicts.
 - Config: secrets via `pydantic-settings` from `.env`; thresholds in `rules.yaml`. No magic numbers for thresholds in code.
 
 ## Adding a source
 
-1. One file in `src/verdikt/sources/<name>.py` implementing the `Source` protocol (`name`, `supports`, `requires_key`, `rate`, `ttl`, `async query`).
+1. One file in `src/verdikt/sources/<name>.py` implementing the `Source` protocol (`name`, `supports`, `requires_key`, `rate`, `ttl`, `daily_budget`, `timeout`, `quota_group`, `enabled`, `async query`); subclass `BaseSource`, which maps timeouts, network errors and malformed bodies to `ERROR`.
 2. Map raw response to `SourceResult` and fill `metrics` (plain counts/scores/booleans). No thresholds and no `level` in the source; add rules to `rules.yaml`.
 3. Handle every outcome explicitly: hit, not found (`NOT_FOUND`), 429 (`RATE_LIMITED`), 4xx/5xx/timeout (`ERROR`). Never raise out of `query`.
 4. Set `link` to the source's web page for the IOC.
@@ -49,10 +49,10 @@ cd web && npm run lint && npm run typecheck && npm test
 
 - API keys only in `.env` (git-ignored). Never log, print, return from the API, put in URLs where avoidable, or commit them. Fixtures must be scrubbed of keys and account data.
 - API binds to `127.0.0.1` only. Keep the `Host` header check, the per-run session token, and JSON-only POST. Never add CORS headers.
-- Never send internal targets to any third party: private IPs (`not ip.is_global`), URLs whose host is private/internal, `localhost`, single-label names, `.local`/`.internal`/`.lan`/`.corp`/`.home.arpa`, and `VERDIKT_INTERNAL_DOMAINS` suffixes.
-- Escape feed-derived text in notifications: `html.escape()` for Telegram, `&`/`<`/`>` for Slack.
+- Never send internal targets to any third party: private IPs (`not ip.is_global`), URLs whose host is private/internal, `localhost`, single-label names, `.local`/`.internal`/`.lan`/`.corp`/`.home.arpa`/`.intranet`/`.private`/`.home`/`.localdomain`, NAT64 addresses (`64:ff9b::/96`) wrapping a private IPv4, and `VERDIKT_INTERNAL_DOMAINS` suffixes.
+- Escape feed-derived text in notifications. It is single-lined and every dot is defanged. Telegram: `html.escape()`. Slack: `&`/`<`/`>` escaped, backtick becomes `'`, `*` and `~` removed. Discord and Teams: `(` `)` become `{` `}` and Discord sends `allowed_mentions: {parse: []}`. Email is plain text.
 - Retries obey the limiter and daily budget on every attempt. `Retry-After` longer than the timeout → `RATE_LIMITED`, no waiting.
-- Map `maxZoom` stays at country level until tiles are self-hosted (tile requests reveal what you investigate).
+- The map must make no remote request (no tiles, no third-party fonts or images): a request would reveal what you investigate.
 - urlscan: search only. No scan submission unless explicitly added, and then `visibility=private` by default.
 - DNS resolution of IOCs is off by default.
 - Treat all source data as attacker-controlled: render as text in the UI (no `dangerouslySetInnerHTML`, no markdown rendering of feed data), defang IOCs in notifications and copy buttons.
@@ -69,12 +69,12 @@ cd web && npm run lint && npm run typecheck && npm test
 
 ## Code style (project-specific)
 
-- Python 3.12+, `pyright` strict. `raw: dict[str, Any]` on `SourceResult` is the one allowed `Any`.
+- Python 3.12+, `pyright` strict. `Any` only where untyped vendor JSON enters (`raw: dict[str, Any]` on `SourceResult`, `jsonutil`, `json_object`, JSON-shaped dicts) and in `**kw` pass-through. Narrow it at that boundary.
 - `ruff` is the formatter and linter; don't argue with it.
 - Async all the way in core; CLI calls `asyncio.run` once.
 - Frontend: TypeScript strict, Tailwind with tokens from `web/src/styles/tokens.css`. No hardcoded colors. Verdict level is always shown with text/icon, never color alone.
 - **Design source of truth: `docs/DESIGN.md`** (references in `docs/design/`). Violet is the only accent; red/amber/teal/grey are reserved for verdict levels.
-- **Skills:** invoke `frontend-design` before any UI work (M5–M7). Invoke `dataviz` before building the map, graph, source waterfall or any chart.
+- **Skills:** invoke `frontend-design` before any UI work. Invoke `dataviz` before building the map, graph, source waterfall or any chart.
 - IOCs, hashes and numbers use the monospace font.
 
 ## Workflow

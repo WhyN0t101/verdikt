@@ -124,5 +124,4 @@ End the report with the commands that were run, the tool versions, and what was 
 
 Found while preparing this document; confirm and triage them on the first run.
 
-- Two `# pyright: ignore` suppressions have no reason next to them: `scheduler.py` (the task list) and `sources/base.py` (`json_object`). Add one or remove them (section 8).
 - urlscan search rows often carry no verdict data, so that source currently contributes nothing (see `docs/SOURCES.md`).
