@@ -5,6 +5,7 @@ import { downloadText } from "../lib/csv";
 import { defang, shortenMiddle } from "../lib/format";
 import type { CveInfo, FeedbackLabel, Report } from "../model";
 import { LEVEL_BG } from "./LevelBadge";
+import { ReportDiff } from "./ReportDiff";
 import { Button, FIELD, SectionTitle } from "./ui";
 
 const FEEDBACK: { label: FeedbackLabel; text: string }[] = [
@@ -82,6 +83,7 @@ export function ReportActions({ report, onOpen }: { report: Report; onOpen: (id:
 
   return (
     <>
+      <ReportDiff key={report.id} reportId={report.id} />
       <Vulnerabilities cves={report.cves} />
       <section aria-label="Report actions" className="border-b border-line">
         <SectionTitle>Seen before</SectionTitle>

@@ -19,7 +19,7 @@ function Tile({ label, value, tone }: { label: string; value: string | number; t
 
 const pct = (n: number, of: number) => (of === 0 ? "-" : `${Math.round((n / of) * 100)}%`);
 
-export function Overview({ onCheck }: { onCheck: (ioc: string) => void }) {
+export function Overview({ onCheck, onOpen }: { onCheck: (ioc: string) => void; onOpen: (reportId: string) => void }) {
   const qc = useQueryClient();
   const stats = useQuery({ queryKey: ["stats"], queryFn: () => api.stats(30) });
   const watch = useQuery({ queryKey: ["watchlist"], queryFn: api.watchlist });
@@ -172,8 +172,13 @@ export function Overview({ onCheck }: { onCheck: (ioc: string) => void }) {
             <h3 className="mb-1.5 text-xs font-medium text-muted">Recent changes</h3>
             <ul className="mono space-y-1 text-xs">
               {watch.data.events.slice(0, 6).map((ev) => (
-                <li key={ev.id}>
-                  {ago(ev.at)} · {shortenMiddle(ev.ioc, 26)}: {ev.from_level} → {ev.to_level}
+                <li key={ev.id} className="flex items-center gap-2">
+                  <span className="min-w-0 flex-1">
+                    {ago(ev.at)} · {shortenMiddle(ev.ioc, 26)}: {ev.from_level} → {ev.to_level}
+                  </span>
+                  <Button variant="ghost" size="sm" onClick={() => onOpen(ev.report_id)} aria-label={`What changed for ${ev.ioc}`}>
+                    What changed
+                  </Button>
                 </li>
               ))}
             </ul>

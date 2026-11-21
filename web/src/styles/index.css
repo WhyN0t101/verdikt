@@ -204,3 +204,9 @@ body::before {
     transition: none !important;
   }
 }
+
+/* text that came from a feed: isolate bidi controls so it cannot reorder the text around it */
+.feed-text {
+  unicode-bidi: isolate;
+  overflow-wrap: anywhere;
+}

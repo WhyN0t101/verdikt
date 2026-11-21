@@ -78,7 +78,7 @@ export function SourceTable({ report, pending }: Props) {
                     )}
                   </td>
                   <td className="px-3 py-2">
-                    <span className="mono text-[13px]">{r.summary}</span>
+                    <span className="mono feed-text text-[13px]">{r.summary}</span>
                     {r.tags.length > 0 && (
                       <span className="mt-1 flex flex-wrap gap-1">
                         {r.tags.map((t) => (
