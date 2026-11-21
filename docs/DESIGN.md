@@ -7,7 +7,7 @@ Two references, kept locally in `docs/design/` (git-ignored, not in the repo):
 
 `web/src/styles/tokens.css` is authoritative for colours. The hex values below are the estimates the palette started from; where the two differ, the file wins. Text contrast stays ≥ 4.5:1.
 
-**Skills:** invoke `frontend-design` before any UI work (M5–M7). Invoke `dataviz` before building the map, graph, timeline or any chart.
+**Skills:** invoke `frontend-design` before any UI work. Invoke `dataviz` before building the map, graph, timeline or any chart.
 
 ---
 
