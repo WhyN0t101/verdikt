@@ -1,18 +1,57 @@
 {
   "data": {
-    "id": "44d88612fea8a8f36de82e1278abb02f",
+    "id": "275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f",
     "type": "file",
     "attributes": {
       "last_analysis_stats": {
-        "malicious": 60,
+        "malicious": 61,
         "suspicious": 0,
+        "undetected": 2,
         "harmless": 0,
-        "undetected": 8,
-        "timeout": 0
+        "timeout": 2,
+        "confirmed-timeout": 0,
+        "failure": 2,
+        "type-unsupported": 7
       },
       "popular_threat_classification": {
-        "suggested_threat_label": "trojan.eicar/test"
-      }
+        "suggested_threat_label": "virus.eicar/test",
+        "popular_threat_category": [
+          {
+            "count": 15,
+            "value": "virus"
+          },
+          {
+            "count": 2,
+            "value": "trojan"
+          }
+        ],
+        "popular_threat_name": [
+          {
+            "count": 55,
+            "value": "eicar"
+          },
+          {
+            "count": 46,
+            "value": "test"
+          },
+          {
+            "count": 33,
+            "value": "file"
+          }
+        ]
+      },
+      "type_description": "Powershell",
+      "tags": [
+        "long-sleeps",
+        "direct-cpu-clock-access",
+        "via-tor",
+        "detect-debug-environment",
+        "known-distributor",
+        "powershell",
+        "idle",
+        "attachment"
+      ],
+      "reputation": 3802
     }
   }
 }

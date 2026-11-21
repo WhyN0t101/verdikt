@@ -40,12 +40,8 @@ class Urlscan(BaseSource):
             return err
         body = json_object(resp)
         results = body.get("results", [])
-        # `verdicts` is not guaranteed on search rows; absent means "no signal", not clean.
-        if not any("verdicts" in r for r in results):
-            return self.result(Status.NOT_FOUND, f"{len(results)} scans, no verdict data")
-        malicious = sum(
-            1 for r in results if r.get("verdicts", {}).get("overall", {}).get("malicious")
-        )
+        total = int(body.get("total", len(results)))
+        # Context only: free-plan search rows carry no verdicts and result pages need a login.
         related: list[RelatedIOC] = []
         seen: set[str] = set()
         for r in results:
@@ -54,11 +50,17 @@ class Urlscan(BaseSource):
                 val = page.get(key)
                 if val and val != ioc.value and val not in seen and len(seen) < 5:
                     seen.add(val)
-                    related.append(RelatedIOC(value=str(val), type=kind, relation="resolves_to"))
+                    # a domain seen on an IP resolves to it, so the edge points domain -> ioc
+                    inbound = ioc.type is IOCType.IP and kind is IOCType.DOMAIN
+                    related.append(
+                        RelatedIOC(
+                            value=str(val), type=kind, relation="resolves_to", inbound=inbound
+                        )
+                    )
         return self.result(
             Status.OK,
-            f"{len(results)} scans, {malicious} flagged malicious",
-            metrics={"scans": len(results), "malicious": malicious > 0},
+            f"{total} public scan{'s' if total != 1 else ''}",
+            metrics={"scans": total},
             related=related,
             link=f"https://urlscan.io/search/#{quote(query, safe='')}",
             raw=body,

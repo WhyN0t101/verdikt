@@ -18,3 +18,18 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22 }
       - run: cd web && npm ci && npm run lint && npm run typecheck && npm test && npm run build
+  e2e:
+    # real API + built SPA over fake sources (scripts/e2e_server.py): no keys, no live calls
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: uv sync
+      - run: cd web && npm ci && npm run build
+      - run: cd web && npx playwright install --with-deps chromium
+      - run: cd web && npm run e2e
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with: { name: playwright-traces, path: web/test-results }

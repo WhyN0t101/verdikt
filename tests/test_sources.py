@@ -48,14 +48,50 @@ def _route(router: respx.MockRouter, case: Case, **resp: Any) -> respx.Route:
     )
 
 
+BAD_DOM = IOC(value="s.gsx88.org", type=IOCType.DOMAIN)
+EXAMPLE = IOC(value="example.com", type=IOCType.DOMAIN)
+
 HITS = [
+    # recorded from live responses (trimmed, see tests/fixtures/README.md)
+    Case(
+        ThreatFox("k"),
+        BAD_DOM,
+        "POST",
+        "https://threatfox-api.abuse.ch/api/v1/",
+        ("threatfox", "hit_domain_real"),
+        {"match": True, "entries": 1},
+    ),
+    Case(
+        MalwareBazaar("k"),
+        SHA,
+        "POST",
+        "https://mb-api.abuse.ch/api/v1/",
+        ("malwarebazaar", "hit_real"),
+        {"match": True},
+    ),
+    Case(
+        OTX(),
+        EXAMPLE,
+        "GET",
+        "https://otx.alienvault.com/api/v1/indicators/domain/example.com/general",
+        ("otx", "domain_popular"),
+        {"pulses": 50},
+    ),
+    Case(
+        VirusTotal("k"),
+        EXAMPLE,
+        "GET",
+        "https://www.virustotal.com/api/v3/domains/example.com",
+        ("virustotal", "domain_real"),
+        {"malicious": 0, "suspicious": 0, "total": 92},
+    ),
     Case(
         VirusTotal("k"),
         IP,
         "GET",
         "https://www.virustotal.com/api/v3/ip_addresses/185.220.101.4",
         ("virustotal", "ip_hit"),
-        {"malicious": 12, "suspicious": 1, "total": 94},
+        {"malicious": 13, "suspicious": 2, "total": 92},
     ),
     Case(
         VirusTotal("k"),
@@ -79,7 +115,7 @@ HITS = [
         "GET",
         f"https://www.virustotal.com/api/v3/files/{MD5.value}",
         ("virustotal", "file_hit"),
-        {"malicious": 60},
+        {"malicious": 61, "total": 74},
     ),
     Case(
         AbuseIPDB("k"),
@@ -87,7 +123,7 @@ HITS = [
         "GET",
         "https://api.abuseipdb.com/api/v2/check",
         ("abuseipdb", "hit"),
-        {"score": 100, "reports": 2341, "tor": True},
+        {"score": 100, "reports": 448, "tor": True},
     ),
     Case(
         AbuseIPDB("k"),
@@ -102,8 +138,8 @@ HITS = [
         DOM,
         "GET",
         "https://urlscan.io/api/v1/search/",
-        ("urlscan", "hit"),
-        {"scans": 2, "malicious": True},
+        ("urlscan", "search_real"),
+        {"scans": 5},
     ),
     Case(
         ThreatFox("k"),
@@ -118,7 +154,7 @@ HITS = [
         IP,
         "POST",
         "https://threatfox-api.abuse.ch/api/v1/",
-        ("threatfox", "miss"),
+        ("threatfox", "miss_real"),
         {"match": False, "entries": 0},
     ),
     Case(
@@ -134,8 +170,8 @@ HITS = [
         DOM,
         "POST",
         "https://urlhaus-api.abuse.ch/v1/host/",
-        ("urlhaus", "host_offline"),
-        {"match": True, "online": False},
+        ("urlhaus", "host_offline_real"),
+        {"match": True, "online": False, "urls": 5},
     ),
     Case(
         URLhaus("k"),
@@ -166,7 +202,7 @@ HITS = [
         SHA,
         "POST",
         "https://mb-api.abuse.ch/api/v1/",
-        ("malwarebazaar", "miss"),
+        ("malwarebazaar", "miss_real"),
         {"match": False},
     ),
     Case(
@@ -207,7 +243,7 @@ HITS = [
         "GET",
         "https://internetdb.shodan.io/185.220.101.4",
         ("internetdb", "hit"),
-        {"ports": 2, "vulns": 1, "hostnames": 1},
+        {"ports": 4, "vulns": 0, "hostnames": 1},
     ),
     Case(
         HybridAnalysis("k"),
@@ -425,18 +461,6 @@ async def test_retry_after_http_date_is_honoured(
     assert sleeps.calls == []
 
 
-async def test_urlscan_without_verdict_data_is_not_a_clean_vote(
-    router: respx.MockRouter, gate: Gate
-) -> None:
-    for name in ("miss",):
-        router.route().mock(return_value=httpx.Response(200, json=fixture("urlscan", name)))
-        assert (await Urlscan().query(DOM, gate)).status is Status.NOT_FOUND
-    router.route().mock(
-        return_value=httpx.Response(200, json={"results": [{"page": {"ip": "203.0.113.9"}}]})
-    )
-    assert (await Urlscan().query(DOM, gate)).status is Status.NOT_FOUND
-
-
 @pytest.mark.parametrize(("source", "ioc"), ALL, ids=IDS)
 @pytest.mark.parametrize(
     "body",
@@ -451,3 +475,21 @@ async def test_odd_member_shapes_never_raise(
 ) -> None:
     router.route().mock(return_value=httpx.Response(200, text=body))
     await source.query(ioc, gate)  # must return a SourceResult, never raise
+
+
+async def test_urlscan_is_context_only_search_data(router: respx.MockRouter, gate: Gate) -> None:
+    router.route().mock(return_value=httpx.Response(200, json=fixture("urlscan", "search_real")))
+    result = await Urlscan().query(IP, gate)
+    assert result.status is Status.OK
+    assert "malicious" not in result.metrics  # free-plan search has no verdicts
+    assert result.related == []  # every scanned page is the IP itself
+
+
+async def test_real_domain_response_yields_resolved_ips(
+    router: respx.MockRouter, gate: Gate
+) -> None:
+    router.route().mock(return_value=httpx.Response(200, json=fixture("virustotal", "domain_real")))
+    result = await VirusTotal("k").query(EXAMPLE, gate)
+    values = [r.value for r in result.related]
+    assert values[:2] == ["172.66.147.243", "104.20.23.154"]
+    assert any(":" in v for v in values)  # AAAA records too

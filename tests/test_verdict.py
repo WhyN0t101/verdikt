@@ -26,8 +26,12 @@ CASES: list[tuple[str, list[SourceResult], Level]] = [
     ("abuseipdb 25", [row("abuseipdb", score=25)], Level.SUSPICIOUS),
     ("threatfox match", [row("threatfox", match=True)], Level.MALICIOUS),
     ("urlhaus online", [row("urlhaus", match=True, online=True)], Level.MALICIOUS),
-    ("urlhaus offline listing", [row("urlhaus", match=True, online=False)], Level.SUSPICIOUS),
-    ("otx pulses", [row("otx", pulses=3)], Level.SUSPICIOUS),
+    ("offline listing is not enough", [row("urlhaus", match=True, online=False), vt()], Level.SAFE),
+    (
+        "otx pulses never decide",
+        [row("otx", pulses=50), vt(), row("threatfox", match=False)],
+        Level.SAFE,
+    ),
     ("two clean sources", [vt(), row("abuseipdb", score=0)], Level.SAFE),
     (
         "weak sources alone are not safe",
@@ -47,7 +51,7 @@ CASES: list[tuple[str, list[SourceResult], Level]] = [
     ),
     (
         "low-weight error does not block",
-        [row("abuseipdb", ERR), vt(), row("otx", pulses=0)],
+        [row("abuseipdb", ERR), vt(), row("threatfox", match=False)],
         Level.SAFE,
     ),
     # INFO rows do not count toward min_sources_for_safe
@@ -107,7 +111,7 @@ def test_row_levels_follow_the_same_thresholds() -> None:
         row("virustotal", ERR),
     ]
     levels = [r.level for r in decide(rows, RULES).results]
-    assert levels == [Level.MALICIOUS, Level.SUSPICIOUS, Level.SAFE, Level.INFO, Level.UNKNOWN]
+    assert levels == [Level.MALICIOUS, Level.SUSPICIOUS, Level.INFO, Level.INFO, Level.UNKNOWN]
 
 
 def test_source_cannot_set_its_own_level() -> None:

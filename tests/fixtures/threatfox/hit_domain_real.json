@@ -1,0 +1,25 @@
+{
+  "query_status": "ok",
+  "data": [
+    {
+      "id": "2037879",
+      "ioc": "s.gsx88.org",
+      "threat_type": "botnet_cc",
+      "threat_type_desc": "Indicator that identifies a botnet command&control server (C&C)",
+      "ioc_type": "domain",
+      "ioc_type_desc": "Domain that is used for botnet Command&control (C&C)",
+      "malware": "win.vidar",
+      "malware_printable": "Vidar",
+      "malware_alias": null,
+      "malware_malpedia": "https://malpedia.caad.fkie.fraunhofer.de/details/win.vidar",
+      "confidence_level": 100,
+      "is_compromised": true,
+      "first_seen": "2026-11-21 11:10:34 UTC",
+      "last_seen": null,
+      "reference": null,
+      "tags": [
+        "Vidar"
+      ]
+    }
+  ]
+}

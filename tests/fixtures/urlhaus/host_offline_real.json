@@ -1,0 +1,28 @@
+{
+  "query_status": "ok",
+  "urlhaus_reference": "https://urlhaus.abuse.ch/host/example.com/",
+  "host": "example.com",
+  "firstseen": "2023-03-28 11:35:11 UTC",
+  "url_count": "5",
+  "blacklists": {
+    "spamhaus_dbl": "not listed",
+    "surbl": "not listed"
+  },
+  "urls": [
+    {
+      "id": "3949568",
+      "urlhaus_reference": "https://urlhaus.abuse.ch/url/3949568/",
+      "url": "http://example.com/test_drop_check",
+      "url_status": "offline",
+      "date_added": "2026-10-13 14:15:06 UTC",
+      "threat": "malware_download",
+      "larted": "false",
+      "takedown_time_seconds": null,
+      "tags": [
+        "automated",
+        "cowrie",
+        "honeypot"
+      ]
+    }
+  ]
+}

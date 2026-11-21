@@ -1,0 +1,76 @@
+{
+  "data": {
+    "id": "example.com",
+    "type": "domain",
+    "attributes": {
+      "last_analysis_stats": {
+        "malicious": 0,
+        "suspicious": 0,
+        "undetected": 32,
+        "harmless": 60,
+        "timeout": 0
+      },
+      "last_dns_records": [
+        {
+          "type": "NS",
+          "ttl": 21600,
+          "value": "hera.ns.cloudflare.com"
+        },
+        {
+          "type": "TXT",
+          "ttl": 300,
+          "value": "_k2n1y4vw3qtb4skdx9e7dxt97qrmmq9"
+        },
+        {
+          "type": "SOA",
+          "ttl": 1800,
+          "value": "elliott.ns.cloudflare.com",
+          "rname": "dns.cloudflare.com",
+          "serial": 2420077714,
+          "refresh": 10000,
+          "retry": 2400,
+          "expire": 604800,
+          "minimum": 1800
+        },
+        {
+          "type": "A",
+          "ttl": 300,
+          "value": "172.66.147.243"
+        },
+        {
+          "type": "A",
+          "ttl": 300,
+          "value": "104.20.23.154"
+        },
+        {
+          "type": "MX",
+          "ttl": 300,
+          "priority": 0,
+          "value": ""
+        },
+        {
+          "type": "AAAA",
+          "ttl": 300,
+          "value": "2606:4700:10::6814:179a"
+        },
+        {
+          "type": "NS",
+          "ttl": 21600,
+          "value": "elliott.ns.cloudflare.com"
+        },
+        {
+          "type": "AAAA",
+          "ttl": 300,
+          "value": "2606:4700:10::ac42:93f3"
+        },
+        {
+          "type": "TXT",
+          "ttl": 300,
+          "value": "v=spf1 -all"
+        }
+      ],
+      "reputation": 31,
+      "tags": []
+    }
+  }
+}

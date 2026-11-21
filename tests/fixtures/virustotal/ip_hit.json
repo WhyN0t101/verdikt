@@ -3,15 +3,22 @@
     "id": "185.220.101.4",
     "type": "ip_address",
     "attributes": {
-      "asn": 4224,
-      "as_owner": "EXAMPLE-AS",
       "last_analysis_stats": {
-        "malicious": 12,
-        "suspicious": 1,
-        "harmless": 60,
-        "undetected": 21,
+        "malicious": 13,
+        "suspicious": 2,
+        "undetected": 31,
+        "harmless": 46,
         "timeout": 0
-      }
+      },
+      "asn": 60729,
+      "as_owner": "Stiftung Erneuerbare Freiheit",
+      "country": "DE",
+      "tags": [
+        "tor",
+        "suspicious-udp",
+        "self-signed"
+      ],
+      "reputation": 18
     }
   }
 }

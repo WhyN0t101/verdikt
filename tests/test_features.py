@@ -67,7 +67,7 @@ def report(
 
 
 def test_weak_sources_alone_cannot_make_safe() -> None:
-    d = decide([row("abuseipdb", score=0), row("otx", pulses=0)], RULES)
+    d = decide([row("abuseipdb", score=0), row("threatfox", match=False)], RULES)
     assert d.level is Level.UNKNOWN
     assert any("no high-weight source answered" in r for r in d.reasons)
 
@@ -78,7 +78,10 @@ def test_one_high_weight_plus_one_other_is_safe() -> None:
 
 def test_min_high_weight_is_configurable() -> None:
     loose = Rules.model_validate({**RULES.model_dump(), "min_high_weight_for_safe": 0})
-    assert decide([row("abuseipdb", score=0), row("otx", pulses=0)], loose).level is Level.SAFE
+    assert (
+        decide([row("abuseipdb", score=0), row("threatfox", match=False)], loose).level
+        is Level.SAFE
+    )
 
 
 # --- confidence ---------------------------------------------------------------------------
@@ -91,7 +94,21 @@ def test_min_high_weight_is_configurable() -> None:
         ("one strong", [vt(malicious=9)], Confidence.MEDIUM),
         ("one weak", [row("otx", pulses=9)], Confidence.LOW),
         ("safe with strong+medium", [vt(), row("abuseipdb", score=0)], Confidence.HIGH),
-        ("safe with strong+weak", [vt(), row("otx", pulses=0)], Confidence.MEDIUM),
+        (
+            "safe: a feed's no-match adds no weight",
+            [vt(), row("threatfox", match=False)],
+            Confidence.MEDIUM,
+        ),
+        (
+            "real 185.220.101.4: bad but unlisted in feeds",
+            [
+                vt(malicious=13),
+                row("abuseipdb", score=100),
+                row("threatfox", match=False),
+                row("urlhaus", match=False, online=False),
+            ],
+            Confidence.HIGH,
+        ),
         ("unknown is always low", [row("abuseipdb", score=0)], Confidence.LOW),
         (
             "override: conflicting evidence",

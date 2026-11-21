@@ -69,11 +69,11 @@ Guiding rule: the core is a Python library that returns one JSON model. The CLI,
 |---|---|---|---|---|---|---|---|
 | VirusTotal v3 | ✓ | ✓ | ✓ | ✓ | yes | 24 h | high |
 | AbuseIPDB v2 | ✓ | | | | yes | 6 h | medium |
-| urlscan.io (search only) | ✓ | ✓ | ✓ | sha256 | optional | 12 h | medium |
+| urlscan.io (search only) | ✓ | ✓ | ✓ | sha256 | optional | 12 h | context only |
 | ThreatFox | ✓ | ✓ | ✓ | ✓ | abuse.ch | 6 h | high |
 | URLhaus | ✓ (host) | ✓ | ✓ | | abuse.ch | 6 h | high |
 | MalwareBazaar | | | | ✓ | abuse.ch | 7 d | high |
-| AlienVault OTX | ✓ | ✓ | ✓ | ✓ | optional | 24 h | low |
+| AlienVault OTX | ✓ | ✓ | ✓ | ✓ | optional | 24 h | context only |
 | GreyNoise Community | ✓ | | | | optional | 24 h | benign override |
 | Shodan InternetDB | ✓ | | | | no | 7 d | context only |
 | Hybrid Analysis | | | | ✓ | yes | 7 d | medium |
@@ -247,17 +247,17 @@ malicious:                      # any match -> MALICIOUS
 suspicious:                     # any match -> SUSPICIOUS
   virustotal: {malicious: 1, suspicious: 1}
   abuseipdb: {score: 25}
-  otx: {pulses: 3}
-  urlscan: {malicious: true}
   hybrid: {malicious: true}
-  urlhaus: {match: true}        # listed but offline
 benign_override:                # downgrade SUSPICIOUS -> SAFE; never touches MALICIOUS
   greynoise: {riot: true}
-context_only: [internetdb, greynoise]   # row level INFO, never count toward min_sources_for_safe
+# row level INFO, never count toward min_sources_for_safe. OTX pulse counts include mere mentions
+# (50 for example.com) and urlscan search has no verdicts on the free plan.
+context_only: [internetdb, greynoise, otx, urlscan]
 high_weight: [virustotal, threatfox, urlhaus, malwarebazaar]
 min_sources_for_safe: 2
 min_high_weight_for_safe: 1     # SAFE needs this many successful high-weight sources
-weights: {virustotal: 3, threatfox: 3, urlhaus: 3, malwarebazaar: 3, abuseipdb: 2, hybrid: 2, urlscan: 1, otx: 1}
+listing_feeds: [threatfox, urlhaus, malwarebazaar]   # "no match" = absence of evidence: weight 0, not a strong source
+weights: {virustotal: 3, threatfox: 3, urlhaus: 3, malwarebazaar: 3, abuseipdb: 2, hybrid: 2}
 default_weight: 1
 confidence_high: 5              # agreeing weight >= 5 -> high
 confidence_medium: 3            # >= 3 -> medium, below -> low
@@ -279,7 +279,7 @@ Decision order in `decide()`:
 - `decide()` is a pure function, fully unit-tested with table-driven cases.
 - Every rule that fires adds a line to `Report.reasons`.
 - `agreeing` / `total` count verdict-bearing OK rows only.
-- `NOT_FOUND` (no record at the source, e.g. VT 404, GreyNoise not observed) is neither clean nor an error: it does not count toward `min_sources_for_safe`. From a high-weight source (VT) it blocks SAFE, because abuse.ch feeds only list known-bad items and an unseen IOC is not a clean one. Feeds that answered "no match" (ThreatFox, URLhaus, MalwareBazaar) return `OK` with `match: false`. urlscan returns `NOT_FOUND` when its search rows carry no verdict data.
+- `NOT_FOUND` (no record at the source, e.g. VT 404, GreyNoise not observed) is neither clean nor an error: it does not count toward `min_sources_for_safe`. From a high-weight source (VT) it blocks SAFE, because abuse.ch feeds only list known-bad items and an unseen IOC is not a clean one. Feeds that answered "no match" (ThreatFox, URLhaus, MalwareBazaar) return `OK` with `match: false`. urlscan and OTX are context only (INFO rows).
 - ThreatFox search is a substring search: only entries whose `ioc` equals the IOC (or `ip:port`) count as a match.
 - Errors and rate limits never count as clean. Example that must give UNKNOWN: VT RATE_LIMITED, AbuseIPDB score 0, InternetDB OK.
 

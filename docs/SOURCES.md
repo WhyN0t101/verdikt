@@ -8,11 +8,11 @@ Each source lives in one file under `src/verdikt/sources/`. It maps the vendor r
 |---|---|---|---|---|---|---|---|---|
 | `virustotal` | yes | yes | yes | yes | required | 24 h | 500 | high weight |
 | `abuseipdb` | yes | | | | required | 6 h | 1000 | verdict |
-| `urlscan` | yes | yes | yes | sha256 | optional | 12 h | 1000 | verdict |
+| `urlscan` | yes | yes | yes | sha256 | optional | 12 h | 1000 | context only |
 | `threatfox` | yes | yes | yes | yes | abuse.ch | 6 h | none | high weight |
 | `urlhaus` | yes (host) | yes | yes | | abuse.ch | 6 h | none | high weight |
 | `malwarebazaar` | | | | yes | abuse.ch | 7 d | none | high weight |
-| `otx` | yes | yes | yes | yes | optional | 24 h | none | verdict (low) |
+| `otx` | yes | yes | yes | yes | optional | 24 h | none | context only |
 | `greynoise` | yes | | | | optional | 24 h | none | context, benign override |
 | `internetdb` | yes | | | | none | 7 d | none | context only |
 | `hybrid` | | | | yes | required | 7 d | 200 | verdict |
@@ -27,11 +27,11 @@ Rule semantics: an integer means "metric is at least this value", a boolean mean
 |---|---|---|
 | `virustotal` | `malicious`, `suspicious`, `harmless`, `undetected`, `total` | MALICIOUS at `malicious >= 5`; SUSPICIOUS at `malicious >= 1` or `suspicious >= 1` |
 | `abuseipdb` | `score`, `reports`, `tor` | MALICIOUS at `score >= 75`; SUSPICIOUS at `score >= 25` |
-| `urlscan` | `scans`, `malicious` | SUSPICIOUS when `malicious` is true |
+| `urlscan` | `scans` | INFO row |
 | `threatfox` | `match`, `entries` | MALICIOUS when `match` is true |
-| `urlhaus` | `match`, `online`, `urls` | MALICIOUS when `online` is true; SUSPICIOUS when listed but offline |
+| `urlhaus` | `match`, `online`, `urls` | MALICIOUS when `online` is true. A listing with only offline URLs is not enough (a honeypot URL got `example.com` listed) |
 | `malwarebazaar` | `match` | MALICIOUS when `match` is true |
-| `otx` | `pulses` | SUSPICIOUS at `pulses >= 3` |
+| `otx` | `pulses` | INFO row. The pulse count includes every pulse that merely mentions the indicator and is capped at 50 (it was 50 for `example.com`) |
 | `greynoise` | `noise`, `riot` | INFO row; `riot` true downgrades SUSPICIOUS to SAFE |
 | `internetdb` | `ports`, `vulns`, `hostnames` | INFO row |
 | `hybrid` | `malicious`, `threat_score`, `reports` | SUSPICIOUS when `malicious` is true |
@@ -52,7 +52,7 @@ Rule semantics: an integer means "metric is at least this value", a boolean mean
 
 - **VirusTotal v3.** Key goes in the `x-apikey` header. URLs are looked up by their URL-safe base64 id. Domains also yield their resolved IPs as related indicators; files yield a suggested threat label as a malware-family node.
 - **AbuseIPDB v2.** Key goes in the `Key` header. Looks back 90 days.
-- **urlscan.io.** Search only (`/api/v1/search/`); verdikt never submits a scan, because submissions are public by default and make urlscan visit the target. The search result rows must carry verdict data to count: when they do not, the row is `not_found` so that "no data" is never read as clean. In practice the public search often omits verdicts, so this source may contribute nothing until per-result fetches are added.
+- **urlscan.io.** Search only (`/api/v1/search/`); verdikt never submits a scan, because submissions are public by default and make urlscan visit the target. Context only: on the free plan search rows carry no verdicts, `verdicts.*` fields cannot be searched (HTTP 403) and result pages need a login, so the row reports how many public scans exist and the IPs and domains seen on them. Per-result verdicts could be fetched with a urlscan key; that is not implemented or tested.
 - **ThreatFox (v1 API, `Auth-Key` header).** The IOC search is a substring search, so only entries whose `ioc` equals the indicator (or an IP with a port, `1.2.3.4:80`) count as a match. Malware families become graph nodes.
 - **URLhaus (v1 API).** Host lookups for IPs and domains, URL lookups for URLs. Hash lookups are not used.
 - **MalwareBazaar.** Hash lookups; the signature becomes a malware-family node.
@@ -70,3 +70,7 @@ The abuse.ch v1 endpoints with the `Auth-Key` header are the ones implemented. a
 3. Register it in `sources/__init__.py`, add an empty key to `.env.example` and the field to `config.py`.
 4. Add rules to `rules.yaml` (and `high_weight` or `context_only` if relevant) and a row to the tables above.
 5. Test hit, miss, error and 429 with fixtures in `tests/fixtures/<name>/`. Record a real response once, then scrub keys, emails and account IDs and trim it to the fields used.
+
+## Recorded fixtures
+
+Fixtures marked real in `tests/fixtures/README.md` were recorded from live responses and trimmed to the fields the clients read. The first recording found three semantic problems that no hand-made fixture could: OTX's pulse count and URLhaus's offline host listings made `example.com` suspicious, and "no match" from list-only feeds (ThreatFox, URLhaus, MalwareBazaar) was counted as evidence against a malicious verdict, so a Tor exit node with VirusTotal 13/92 and AbuseIPDB 100 had low confidence. Not yet recorded: URLhaus URL lookups, Hybrid Analysis (no key), VirusTotal URL lookups, and a ThreatFox IP hit.

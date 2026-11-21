@@ -20,6 +20,7 @@ class Rules(BaseModel):
     context_only: list[str] = Field(default_factory=list)
     high_weight: list[str] = Field(default_factory=list)
     min_sources_for_safe: int = 2
+    listing_feeds: list[str] = Field(default_factory=list[str])
     min_high_weight_for_safe: int = 1
     # evidence weight per source; drives Report.confidence, never the verdict level
     weights: dict[str, int] = Field(default_factory=dict[str, int])

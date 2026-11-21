@@ -24,7 +24,7 @@ uv run pytest
 cd web && npm run lint && npm run typecheck && npm test && npm run build
 ```
 
-`npm run e2e` is not part of CI today; run it by hand when the UI changed (needs `npx playwright install chromium` once). Note that gap in the report if the UI changed and it was not run.
+`npm run e2e` runs in CI (the `e2e` job). Locally it needs a browser: `PW_CHANNEL=msedge npm run e2e`, or `npx playwright install chromium` once.
 
 ## 3. Security invariants
 
@@ -126,5 +126,4 @@ Found while preparing this document; confirm and triage them on the first run.
 
 - `Engine.check` hides source exceptions without logging (section 6).
 - Some suppressions in `src/` lack a justification (section 8).
-- `npm run e2e` is not in CI (section 2).
 - urlscan search rows often carry no verdict data, so that source currently contributes nothing (see `docs/SOURCES.md`).

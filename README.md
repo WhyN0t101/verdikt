@@ -136,7 +136,7 @@ Each source reports plain facts (counts, scores, booleans) as `metrics`. It neve
 1. Each successful row becomes MALICIOUS, SUSPICIOUS or SAFE from the rules. Context-only sources (InternetDB, GreyNoise) become INFO.
 2. Any MALICIOUS row makes the verdict MALICIOUS.
 3. Any SUSPICIOUS row makes it SUSPICIOUS, unless a benign override matches (GreyNoise `riot`), which gives SAFE. An override never touches MALICIOUS.
-4. Otherwise the verdict is SAFE only if at least `min_sources_for_safe` (default 2) verdict-bearing sources answered successfully, at least `min_high_weight_for_safe` (default 1) of them are high-weight sources (VirusTotal, ThreatFox, URLhaus, MalwareBazaar), and no high-weight source returned an error, was rate limited or had no record. Weak sources alone never give SAFE.
+4. Otherwise the verdict is SAFE only if at least `min_sources_for_safe` (default 2) verdict-bearing sources answered successfully, at least `min_high_weight_for_safe` (default 1) of them are strong sources (high-weight sources that are not list-only feeds: today VirusTotal), and no high-weight source returned an error, was rate limited or had no record. Weak sources and list-only feeds alone never give SAFE. A "not listed" answer from ThreatFox, URLhaus or MalwareBazaar is absence of evidence, so it carries no weight in `confidence` either way. OTX and urlscan are context only and never change the verdict.
 5. Otherwise it is UNKNOWN.
 
 Every report also carries a `confidence` of low, medium or high. It is the summed `weights` (in `rules.yaml`) of the sources that agree with the verdict, compared with `confidence_high` and `confidence_medium`; conflicting evidence at least as heavy as the agreeing evidence, or an `unknown` verdict, gives low. Confidence never changes the verdict.
@@ -190,12 +190,12 @@ cd web && npm run dev                      # Vite dev server, proxies /api to th
 cd web && npm run lint && npm run typecheck && npm test && npm run build
 cd web && npm run gen:types                # regenerate src/types.ts after API model changes
 cd web && npm run gen:land                 # regenerate the land dot grid (rarely needed)
-cd web && npm run e2e                      # Playwright smoke test
+cd web && npm run e2e                      # Playwright end to end test (see below)
 ```
 
 - A change is done when `ruff check`, `ruff format --check`, `pyright` and `pytest` pass, and for frontend changes also `npm run lint`, `typecheck`, `test` and `build`.
 - No test makes a live network call. Sources are tested with `respx` against fixtures in `tests/fixtures/<source>/`. The fixtures are trimmed to the fields each client reads and contain no keys or account data.
-- The Playwright smoke test stubs the API and needs a browser installed once with `npx playwright install chromium`.
+- **End to end:** `cd web && npm run build && npm run e2e` starts `scripts/e2e_server.py` (the real API and built UI over fake sources, an in-memory database, no keys, no network) and drives it in a browser: search, verdict, history, "seen before", keyboard shortcuts, graph, feedback, STIX download, theme, the token and Host checks, the CSP, and no console errors. Use an installed browser with `PW_CHANNEL=msedge` (or `chrome`), or run `npx playwright install chromium` once. CI installs Chromium itself.
 - `npm run gen:types` dumps the OpenAPI schema offline (the runtime `/openapi.json` needs the session token) and generates `web/src/types.ts`. Never edit that file by hand. Bump `schema_version` in `src/verdikt/models.py` on any breaking change to `Report`.
 - To add a source: one file in `src/verdikt/sources/` subclassing `BaseSource`, a line in `sources/__init__.py`, an empty key in `.env.example`, rules in `rules.yaml`, a row in `docs/SOURCES.md`, and tests for hit, miss, error and 429.
 

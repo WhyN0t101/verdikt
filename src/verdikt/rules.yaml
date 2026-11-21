@@ -9,16 +9,17 @@ malicious:                      # any match -> MALICIOUS
 suspicious:                     # any match -> SUSPICIOUS
   virustotal: {malicious: 1, suspicious: 1}
   abuseipdb: {score: 25}
-  otx: {pulses: 3}
-  urlscan: {malicious: true}
   hybrid: {malicious: true}
-  urlhaus: {match: true}
 benign_override:                # downgrade SUSPICIOUS -> SAFE; never touches MALICIOUS
   greynoise: {riot: true}
-context_only: [internetdb, greynoise]   # rows get INFO, never count toward min_sources_for_safe
+# rows get INFO, never count toward min_sources_for_safe. OTX counts every pulse that merely
+# mentions an indicator (50 for example.com) and urlscan search carries no verdicts on the free plan.
+context_only: [internetdb, greynoise, otx, urlscan]
 high_weight: [virustotal, threatfox, urlhaus, malwarebazaar]
 min_sources_for_safe: 2
-min_high_weight_for_safe: 1     # SAFE needs this many successful high-weight sources
+# feeds that only list known-bad items: "no match" is absence of evidence, not evidence of safety
+listing_feeds: [threatfox, urlhaus, malwarebazaar]
+min_high_weight_for_safe: 1     # SAFE needs this many successful high-weight non-feed sources
 weights:                        # evidence weight per source -> Report.confidence (never the level)
   virustotal: 3
   threatfox: 3
@@ -26,8 +27,6 @@ weights:                        # evidence weight per source -> Report.confidenc
   malwarebazaar: 3
   abuseipdb: 2
   hybrid: 2
-  urlscan: 1
-  otx: 1
 default_weight: 1
 confidence_high: 5              # agreeing weight >= this -> high
 confidence_medium: 3            # agreeing weight >= this -> medium, below -> low

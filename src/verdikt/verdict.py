@@ -44,6 +44,8 @@ def _confidence(verdict_rows: list[SourceResult], final: Level, rules: Rules) ->
     """Weighted agreement with the final level; conflicting evidence at least as heavy -> low."""
 
     def weight(row: SourceResult) -> int:
+        if row.source in rules.listing_feeds and row.level is Level.SAFE:
+            return 0  # "not listed" says nothing about an indicator that is bad but unlisted
         return rules.weights.get(row.source, rules.default_weight)
 
     agree = sum(weight(r) for r in verdict_rows if r.level is final)
@@ -112,7 +114,11 @@ def decide(results: list[SourceResult], rules: Rules) -> Decision:
         else:
             final = Level.SUSPICIOUS
     else:
-        strong = sum(1 for r in verdict_rows if r.source in rules.high_weight)
+        strong = sum(
+            1
+            for r in verdict_rows
+            if r.source in rules.high_weight and r.source not in rules.listing_feeds
+        )
         if (
             len(verdict_rows) >= rules.min_sources_for_safe
             and strong >= rules.min_high_weight_for_safe
