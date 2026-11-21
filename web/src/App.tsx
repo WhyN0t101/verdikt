@@ -1,8 +1,9 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { CommandBar } from "./components/CommandBar";
 import { EmptyState } from "./components/EmptyState";
+import { HistoryFilters } from "./components/HistoryFilters";
 import { HistoryList } from "./components/HistoryList";
 import { LevelBadge } from "./components/LevelBadge";
 import { Batch } from "./components/Batch";
@@ -17,7 +18,9 @@ import { SourceTable } from "./components/SourceTable";
 import { ReportActions } from "./components/ReportActions";
 import { Diagnostics, VerdictHud } from "./components/VerdictCard";
 import { Waterfall } from "./components/Waterfall";
+import { downloadText } from "./lib/csv";
 import { formatDuration, formatQuota } from "./lib/format";
+import { type HistoryFilter, NO_FILTER, PAGE_SIZE, historyCsv, isFiltered, reportParams } from "./lib/historyQuery";
 import type { Report } from "./model";
 
 // Cytoscape is the largest dependency; load it only when the Graph tab opens.
@@ -79,7 +82,16 @@ export default function App() {
     }
   }, [theme]);
 
-  const history = useQuery({ queryKey: ["reports"], queryFn: () => api.reports() });
+  const [filter, setFilter] = useState<HistoryFilter>(NO_FILTER);
+  const changeFilter = useCallback((change: Partial<HistoryFilter>) => setFilter((f) => ({ ...f, ...change })), []);
+  // pages of PAGE_SIZE; a full page means there may be more. A new report can shift rows by one between pages.
+  const history = useInfiniteQuery({
+    queryKey: ["reports", filter],
+    queryFn: ({ pageParam }) => api.reports(reportParams(filter, pageParam)),
+    initialPageParam: 0,
+    getNextPageParam: (last, all) => (last.length === PAGE_SIZE ? all.length * PAGE_SIZE : undefined),
+  });
+  const historyItems = history.data?.pages.flat() ?? [];
   const sources = useQuery({ queryKey: ["sources"], queryFn: api.sources });
 
   const check = useMutation({
@@ -122,7 +134,7 @@ export default function App() {
         input.current?.select();
         return;
       }
-      const typing = e.target instanceof HTMLElement && ["INPUT", "TEXTAREA"].includes(e.target.tagName);
+      const typing = e.target instanceof HTMLElement && ["INPUT", "TEXTAREA", "SELECT"].includes(e.target.tagName);
       if (e.key === "Escape") {
         if (e.target === input.current) setValue("");
         else input.current?.focus();
@@ -193,7 +205,7 @@ export default function App() {
 
       {view === "overview" && (
         <div className="min-h-0 flex-1 overflow-auto">
-          <Overview onCheck={(ioc) => run(ioc)} />
+          <Overview onCheck={(ioc) => run(ioc)} onOpen={(id) => void open(id)} />
         </div>
       )}
       {view === "cases" && (
@@ -210,7 +222,20 @@ export default function App() {
       <div hidden={view !== "check"} className="grid min-h-0 flex-1 lg:grid-cols-[14rem_minmax(0,1fr)] xl:grid-cols-[14rem_minmax(0,1fr)_20rem]">
         <aside className="order-3 border-t border-line bg-panel py-2 lg:order-none lg:overflow-y-auto lg:border-r lg:border-t-0">
           <h2 className="px-4 pb-2 pt-2 text-sm font-semibold">History</h2>
-          <HistoryList items={history.data ?? []} activeId={report?.id ?? null} onSelect={(id) => void open(id)} />
+          <HistoryFilters filter={filter} onChange={changeFilter} count={historyItems.length} onClear={() => setFilter(NO_FILTER)} />
+          <HistoryList items={historyItems} activeId={report?.id ?? null} onSelect={(id) => void open(id)} filtered={isFiltered(filter)} />
+          {historyItems.length > 0 && (
+            <div className="flex flex-wrap gap-2 px-3 pt-3">
+              {history.hasNextPage && (
+                <Button size="sm" disabled={history.isFetchingNextPage} onClick={() => void history.fetchNextPage()}>
+                  {history.isFetchingNextPage ? "Loading…" : "Load more"}
+                </Button>
+              )}
+              <Button size="sm" variant="ghost" onClick={() => downloadText("verdikt-history.csv", historyCsv(historyItems), "text/csv")}>
+                Export list as CSV
+              </Button>
+            </div>
+          )}
         </aside>
 
         <main className="flex min-h-0 min-w-0 flex-col">

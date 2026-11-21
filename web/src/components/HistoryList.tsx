@@ -6,10 +6,13 @@ interface Props {
   items: ReportSummary[];
   activeId: string | null;
   onSelect: (id: string) => void;
+  /** a filter is on: an empty list then means "no match", not "nothing checked yet" */
+  filtered?: boolean;
 }
 
-export function HistoryList({ items, activeId, onSelect }: Props) {
+export function HistoryList({ items, activeId, onSelect, filtered = false }: Props) {
   if (items.length === 0) {
+    if (filtered) return null; // the filter row already says "No report matches."
     return <p className="px-3 py-2 text-sm text-muted">Nothing checked yet. Paste an indicator to start.</p>;
   }
   return (
