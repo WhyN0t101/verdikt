@@ -29,7 +29,9 @@ class URLhaus(BaseSource):
         body = json_object(resp)
         status = body.get("query_status")
         link = f"https://urlhaus.abuse.ch/browse.php?search={quote(ioc.value, safe='')}"
-        if status in ("no_results", "invalid_host", "invalid_url"):
+        if status in ("invalid_host", "invalid_url"):  # input rejected: no evidence either way
+            return self.result(Status.ERROR, "input rejected by URLhaus")
+        if status == "no_results":
             return self.result(
                 Status.OK,
                 "not listed",

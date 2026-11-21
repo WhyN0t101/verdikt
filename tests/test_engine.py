@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 from datetime import UTC, datetime, timedelta
 
 import httpx
+import pytest
 import respx
 
 from tests.conftest import CountingLimiter, Fake, Sleeps, fixture, make_engine
@@ -25,6 +28,30 @@ async def test_one_raising_source_still_yields_report(
     rows = {r.source: r.status for r in report.results}
     assert rows == {"abuseipdb": Status.OK, "virustotal": Status.ERROR}
     assert report.level is Level.UNKNOWN  # high-weight error blocks SAFE
+
+
+async def test_concurrent_checks_of_one_ioc_make_one_vendor_call(
+    settings: Settings, cache: Cache, client: httpx.AsyncClient, router: respx.MockRouter
+) -> None:
+    route = router.get(VT_URL).mock(
+        return_value=httpx.Response(200, json=fixture("virustotal", "ip_clean"))
+    )
+    engine = make_engine(settings, cache, client, [VirusTotal("k")])
+    first, second = await asyncio.gather(engine.check("8.8.8.8"), engine.check("8.8.8.8"))
+    assert route.call_count == 1
+    assert first.results[0].status is second.results[0].status is Status.OK
+
+
+async def test_raising_source_is_logged_by_class_name_only(
+    settings: Settings,
+    cache: Cache,
+    client: httpx.AsyncClient,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    engine = make_engine(settings, cache, client, [Fake("virustotal", raises=True)])
+    with caplog.at_level(logging.WARNING, logger="verdikt.engine"):
+        await engine.check("8.8.8.8")
+    assert "virustotal: source raised" in caplog.text
 
 
 async def test_cache_hit_skips_http_and_keeps_raw(

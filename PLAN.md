@@ -259,16 +259,16 @@ Inside one source, keys are OR'ed (VT malicious ≥ 1 **or** suspicious ≥ 1).
 Decision order in `decide()`:
 1. Row levels: each OK row gets MALICIOUS / SUSPICIOUS / SAFE from the same rules. Context-only sources (InternetDB, GreyNoise, geo) get INFO.
 2. Any MALICIOUS row → MALICIOUS.
-3. Any SUSPICIOUS row → SUSPICIOUS, unless a `benign_override` matches → SAFE.
+3. Any SUSPICIOUS row → SUSPICIOUS, unless a `benign_override` matches **and** no high-weight source is blocking (see 4) → SAFE.
 4. Otherwise SAFE only if **both**:
    - at least `min_sources_for_safe` **verdict-bearing** sources returned OK (INFO rows don't count), and
-   - no high-weight source that supports this IOC type returned ERROR or RATE_LIMITED.
+   - no high-weight source that supports this IOC type returned ERROR, RATE_LIMITED or NOT_FOUND.
 5. Otherwise UNKNOWN.
 
 - `decide()` is a pure function, fully unit-tested with table-driven cases.
 - Every rule that fires adds a line to `Report.reasons`.
 - `agreeing` / `total` count verdict-bearing OK rows only.
-- `NOT_FOUND` (no record at the source, e.g. VT 404, GreyNoise not observed) is neither clean nor an error: it does not count toward `min_sources_for_safe` and does not block SAFE. Feeds that answered "no match" (ThreatFox, URLhaus, MalwareBazaar) return `OK` with `match: false`. urlscan returns `NOT_FOUND` when its search rows carry no verdict data.
+- `NOT_FOUND` (no record at the source, e.g. VT 404, GreyNoise not observed) is neither clean nor an error: it does not count toward `min_sources_for_safe`. From a high-weight source (VT) it blocks SAFE, because abuse.ch feeds only list known-bad items and an unseen IOC is not a clean one. Feeds that answered "no match" (ThreatFox, URLhaus, MalwareBazaar) return `OK` with `match: false`. urlscan returns `NOT_FOUND` when its search rows carry no verdict data.
 - ThreatFox search is a substring search: only entries whose `ioc` equals the IOC (or `ip:port`) count as a match.
 - Errors and rate limits never count as clean. Example that must give UNKNOWN: VT RATE_LIMITED, AbuseIPDB score 0, InternetDB OK.
 

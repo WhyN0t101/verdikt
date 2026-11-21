@@ -42,7 +42,7 @@ export const CommandBar = forwardRef<HTMLInputElement, Props>(function CommandBa
       <button
         type="submit"
         disabled={pending || !value.trim()}
-        className="h-11 shrink-0 rounded-lg bg-accent px-5text-sm font-semibold text-on-accent shadow-[inset_0_1px_0_rgb(255_255_255/0.22),0_1px_2px_rgb(0_0_0/0.35)] transition hover:brightness-110 active:translate-y-px disabled:cursor-not-allowed disabled:bg-panel2 disabled:text-muted disabled:shadow-[inset_0_0_0_1px_var(--border)]"
+        className="h-11 shrink-0 rounded-lg bg-accent px-5 text-sm font-semibold text-on-accent shadow-[inset_0_1px_0_var(--btn-highlight),0_1px_2px_var(--btn-shadow)] transition hover:brightness-110 active:translate-y-px disabled:cursor-not-allowed disabled:bg-panel2 disabled:text-muted disabled:shadow-[inset_0_0_0_1px_var(--border)]"
       >
         {pending ? "Checking…" : "Check"}
       </button>

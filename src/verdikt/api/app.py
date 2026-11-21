@@ -20,7 +20,7 @@ from pydantic import BaseModel
 from verdikt.cache import ReportSummary
 from verdikt.config import get_settings
 from verdikt.detect import DetectError
-from verdikt.engine import Engine, build_engine
+from verdikt.engine import Engine, SourceInfo, build_engine
 from verdikt.models import Model, Report
 
 TOKEN_HEADER = "x-verdikt-token"  # noqa: S105
@@ -46,15 +46,6 @@ CSP = (
 class CheckRequest(BaseModel):
     ioc: str
     no_cache: bool = False
-
-
-class SourceInfo(Model):
-    name: str
-    enabled: bool
-    requires_key: bool
-    supports: list[str]
-    used_today: int
-    daily_budget: int | None
 
 
 class Health(Model):
@@ -156,7 +147,7 @@ def create_app(
 
     @app.get("/api/sources", response_model=list[SourceInfo])
     async def sources(engine: EngineDep) -> list[SourceInfo]:
-        return [SourceInfo(**s.__dict__) for s in engine.source_status()]
+        return engine.source_status()
 
     @app.get("/api/health", response_model=Health)
     async def health() -> Health:

@@ -5,7 +5,7 @@ function token(): string {
   return document.querySelector<HTMLMetaElement>('meta[name="verdikt-token"]')?.content ?? "";
 }
 
-export class ApiError extends Error {
+class ApiError extends Error {
   readonly status: number;
   constructor(status: number, message: string) {
     super(message);

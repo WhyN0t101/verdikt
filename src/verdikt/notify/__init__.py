@@ -25,10 +25,10 @@ class NotifyOutcome:
     detail: str
 
 
-async def _post(http: httpx.AsyncClient, url: str, **kw: object) -> str | None:
+async def _post(http: httpx.AsyncClient, url: str, payload: dict[str, object]) -> str | None:
     """POST and return an error string (never containing the URL/token) or None."""
     try:
-        resp = await http.post(url, timeout=TIMEOUT, **kw)  # type: ignore[arg-type]
+        resp = await http.post(url, timeout=TIMEOUT, json=payload)
     except httpx.HTTPError as exc:
         return f"network error: {type(exc).__name__}"
     if resp.status_code >= 400:
@@ -50,7 +50,7 @@ async def notify(
         url = settings.key("slack_webhook_url")
         if not url:
             return NotifyOutcome(platform, False, "VERDIKT_SLACK_WEBHOOK_URL not set")
-        error = await _post(http, url, json={"text": slack_message(report)})
+        error = await _post(http, url, {"text": slack_message(report)})
     else:
         token = settings.key("telegram_bot_token")
         chat = settings.telegram_chat_id
@@ -59,7 +59,7 @@ async def notify(
         error = await _post(
             http,
             f"https://api.telegram.org/bot{token}/sendMessage",
-            json={
+            {
                 "chat_id": chat,
                 "text": telegram_message(report),
                 "parse_mode": "HTML",

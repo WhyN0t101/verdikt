@@ -62,6 +62,16 @@ CASES: list[tuple[str, list[SourceResult], Level]] = [
         Level.SAFE,
     ),
     (
+        "riot cannot clear suspicious while a high-weight source is rate limited",
+        [row("abuseipdb", score=30), row("virustotal", RL), row("greynoise", riot=True)],
+        Level.SUSPICIOUS,
+    ),
+    (
+        "high-weight not found blocks safe",
+        [row("virustotal", NF), row("threatfox", match=False), row("malwarebazaar", match=False)],
+        Level.UNKNOWN,
+    ),
+    (
         "riot cannot clear malicious",
         [row("virustotal", malicious=9), row("greynoise", riot=True)],
         Level.MALICIOUS,

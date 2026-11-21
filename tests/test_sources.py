@@ -294,6 +294,15 @@ async def test_5xx_is_error_after_three_attempts(
     assert route.call_count == 3
 
 
+@pytest.mark.parametrize("query_status", ["invalid_host", "invalid_url"])
+async def test_urlhaus_rejected_input_is_error_not_clean(
+    query_status: str, router: respx.MockRouter, gate: Gate
+) -> None:
+    router.route().mock(return_value=httpx.Response(200, json={"query_status": query_status}))
+    result = await URLhaus("k").query(DOM, gate)
+    assert result.status is Status.ERROR
+
+
 @pytest.mark.parametrize(("source", "ioc"), ALL, ids=IDS)
 async def test_429_with_long_retry_after_is_rate_limited_without_waiting(
     source: BaseSource, ioc: IOC, router: respx.MockRouter, gate: Gate, sleeps: Sleeps

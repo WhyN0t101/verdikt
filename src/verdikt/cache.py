@@ -31,6 +31,10 @@ CREATE TABLE IF NOT EXISTS budget (
 """
 
 
+REPORT_RETENTION = timedelta(days=90)
+_NO_LIMIT = 2**62  # sqlite INTEGER max is 2**63 - 1
+
+
 def _utcnow() -> datetime:
     return datetime.now(UTC)
 
@@ -52,6 +56,13 @@ class Cache:
         self._clock = clock
         with self._lock:
             self._db.executescript(_SCHEMA)
+            self._prune_reports()
+
+    def _prune_reports(self) -> None:
+        """Drop history past retention; reports carry full vendor payloads and only grow."""
+        cutoff = (self._clock() - REPORT_RETENTION).isoformat()
+        with self._db:
+            self._db.execute("DELETE FROM reports WHERE created_at < ?", (cutoff,))
 
     def close(self) -> None:
         with self._lock:
@@ -106,7 +117,12 @@ class Cache:
     def get_report(self, report_id: str) -> Report | None:
         with self._lock:
             row = self._db.execute("SELECT body FROM reports WHERE id=?", (report_id,)).fetchone()
-        return Report.model_validate_json(row[0]) if row else None
+        if row is None:
+            return None
+        try:
+            return Report.model_validate_json(row[0])
+        except ValidationError:  # written by an older schema: treat as gone, not a 500
+            return None
 
     def list_reports(self, limit: int = 50, offset: int = 0) -> list[ReportSummary]:
         with self._lock:
@@ -133,15 +149,12 @@ class Cache:
 
     def charge(self, source: str, limit: int | None) -> bool:
         """Count one request. False (and no charge) when `limit` is already used up."""
+        # one statement, so a second process sharing the DB file cannot read the same count
+        cap = limit if limit is not None else _NO_LIMIT
         with self._lock, self._db:
-            day = self._day()
-            row = self._db.execute(
-                "SELECT used FROM budget WHERE source=? AND day=?", (source, day)
-            ).fetchone()
-            used = int(row[0]) if row else 0
-            if limit is not None and used >= limit:
-                return False
-            self._db.execute(
-                "INSERT OR REPLACE INTO budget VALUES (?,?,?)", (source, day, used + 1)
+            cur = self._db.execute(
+                "INSERT INTO budget VALUES (?,?,1) ON CONFLICT(source, day) "
+                "DO UPDATE SET used = used + 1 WHERE used < ?",
+                (source, self._day(), cap),
             )
-            return True
+            return cur.rowcount == 1

@@ -52,6 +52,14 @@ def test_defang(raw: str, want: str) -> None:
     assert defang(raw) == want
 
 
+def test_feed_tags_are_defanged_and_single_line() -> None:
+    report = make_report(tags=["http://evil.com/x", "a\n🟢 SAFE fake"])
+    for msg in (telegram_message(report), slack_message(report)):
+        assert "http://evil.com" not in msg
+        assert "hxxp://evil[.]com/x" in msg
+        assert "\n🟢 SAFE" not in msg
+
+
 def test_messages_are_defanged_and_list_only_hits() -> None:
     for msg in (telegram_message(make_report()), slack_message(make_report())):
         assert "hxxp://evil[.]example/a[.]exe" in msg
@@ -73,7 +81,7 @@ def test_slack_escapes_fake_link() -> None:
     evil = "<https://evil.test|Open report>"
     msg = slack_message(make_report(summary=evil))
     assert evil not in msg
-    assert "&lt;https://evil.test|Open report&gt;" in msg
+    assert "&lt;https://evil[.]test|Open report&gt;" in msg
 
 
 async def test_sends_defanged_to_slack(router: respx.MockRouter, client: httpx.AsyncClient) -> None:

@@ -12,6 +12,7 @@ from verdikt.models import IOCType
         ("8.8.8.8", "8.8.8.8", IOCType.IP),
         ("  8[.]8[.]8[.]8 ", "8.8.8.8", IOCType.IP),
         ("2606:4700:4700::1111", "2606:4700:4700::1111", IOCType.IP),
+        ("::ffff:8.8.8.8", "8.8.8.8", IOCType.IP),
         ("Evil[.]COM.", "evil.com", IOCType.DOMAIN),
         ("evil(.)com", "evil.com", IOCType.DOMAIN),
         ("bücher.example", "xn--bcher-kva.example", IOCType.DOMAIN),

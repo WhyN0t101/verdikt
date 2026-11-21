@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import logging
 import time
 import uuid
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import httpx
@@ -26,6 +26,7 @@ from verdikt.models import (
     GraphNode,
     IOCType,
     Level,
+    Model,
     RelatedIOC,
     Report,
     SourceResult,
@@ -35,12 +36,13 @@ from verdikt.sources import build_sources
 from verdikt.sources.base import BACKOFF, Gate, Limiter, Source
 from verdikt.verdict import decide
 
+log = logging.getLogger(__name__)
+
 LimiterFactory = Callable[[int, float], Limiter]
 Resolver = Callable[[str], Awaitable[list[RelatedIOC]]]
 
 
-@dataclass(frozen=True)
-class SourceStatus:
+class SourceInfo(Model):
     name: str
     enabled: bool
     requires_key: bool
@@ -100,6 +102,7 @@ class Engine:
         self._geo = geo if geo is not None else GeoLookup(settings.geoip_dir)
         self._limiter_factory = limiter_factory
         self._limiters: dict[str, Limiter] = {}
+        self._inflight: dict[tuple[str, str], asyncio.Future[SourceResult]] = {}
         self._sleep = sleep
         self._backoff = backoff
         self._resolver = resolver
@@ -110,9 +113,9 @@ class Engine:
             self._limiters[src.name] = self._limiter_factory(*src.rate)
         return self._limiters[src.name]
 
-    def source_status(self) -> list[SourceStatus]:
+    def source_status(self) -> list[SourceInfo]:
         return [
-            SourceStatus(
+            SourceInfo(
                 name=s.name,
                 enabled=s.enabled,
                 requires_key=s.requires_key,
@@ -128,6 +131,23 @@ class Engine:
         started_ms = int((start - t0) * 1000)
         if not no_cache and (hit := self.cache.get(src.name, ioc.value, src.ttl)) is not None:
             return hit.model_copy(update={"started_ms": started_ms, "duration_ms": 0})
+        # Two concurrent checks of one IOC share one vendor call instead of spending quota twice.
+        key = (src.name, ioc.value)
+        task = None if no_cache else self._inflight.get(key)
+        if task is None:
+            task = asyncio.ensure_future(self._fetch(src, ioc))
+            if not no_cache:
+                self._inflight[key] = task
+                task.add_done_callback(lambda _t: self._inflight.pop(key, None))
+        result = await asyncio.shield(task)  # a cancelled waiter must not cancel the shared call
+        return result.model_copy(
+            update={
+                "started_ms": started_ms,
+                "duration_ms": int((time.perf_counter() - start) * 1000),
+            }
+        )
+
+    async def _fetch(self, src: Source, ioc: IOC) -> SourceResult:
         gate = Gate(
             src.name,
             self._http,
@@ -138,12 +158,6 @@ class Engine:
             backoff=self._backoff,
         )
         result = await src.query(ioc, gate)
-        result = result.model_copy(
-            update={
-                "started_ms": started_ms,
-                "duration_ms": int((time.perf_counter() - start) * 1000),
-            }
-        )
         if result.status in (Status.OK, Status.NOT_FOUND):
             self.cache.put(src.name, ioc.value, result)
         return result
@@ -160,7 +174,11 @@ class Engine:
         )
         results: list[SourceResult] = []
         for src, out in zip(active, outcomes, strict=True):
+            if isinstance(out, asyncio.CancelledError):
+                raise out
             if isinstance(out, BaseException):
+                # class name only: the message may echo attacker-controlled vendor data
+                log.warning("%s: source raised %s", src.name, type(out).__name__)
                 results.append(
                     SourceResult(source=src.name, status=Status.ERROR, summary="source failed")
                 )

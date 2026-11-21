@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+from collections.abc import Callable
 
 from verdikt.models import Level, Report, SourceResult, Status
 
@@ -25,6 +26,16 @@ def defang(value: str) -> str:
         if out.lower().startswith(scheme):
             return fanged + out[len(scheme) :]
     return out
+
+
+def _feed_text(text: str) -> str:
+    """Feed-derived text: one line (no faked extra rows) and defanged (no live links)."""
+    return defang(" ".join(text.split()))
+
+
+def _hit_line(row: SourceResult, escape: Callable[[str], str]) -> str:
+    tags = f" [{escape(_feed_text(', '.join(row.tags[:3])))}]" if row.tags else ""
+    return f"• {escape(row.source)}: {escape(_feed_text(row.summary))}{tags}"
 
 
 def escape_telegram(text: str) -> str:
@@ -62,11 +73,7 @@ def telegram_message(report: Report) -> str:
         f"<b>{escape_telegram(head)}</b> <code>{escape_telegram(ioc)}</code> "
         f"({escape_telegram(report.ioc_type.value)})"
     ]
-    lines += [
-        f"• {escape_telegram(r.source)}: {escape_telegram(r.summary)}"
-        + (f" [{escape_telegram(', '.join(r.tags[:3]))}]" if r.tags else "")
-        for r in hit_rows(report)
-    ]
+    lines += [_hit_line(r, escape_telegram) for r in hit_rows(report)]
     if link := _link(report):
         lines.append(f'<a href="{escape_telegram(link)}">Open report</a>')
     return "\n".join(lines)
@@ -77,11 +84,7 @@ def slack_message(report: Report) -> str:
     lines = [
         f"*{escape_slack(head)}* `{escape_slack(ioc)}` ({escape_slack(report.ioc_type.value)})"
     ]
-    lines += [
-        f"• {escape_slack(r.source)}: {escape_slack(r.summary)}"
-        + (f" [{escape_slack(', '.join(r.tags[:3]))}]" if r.tags else "")
-        for r in hit_rows(report)
-    ]
+    lines += [_hit_line(r, escape_slack) for r in hit_rows(report)]
     if link := _link(report):
         # our own link, but strip the characters that would break out of <url|text>
         safe = link.replace("|", "%7C").replace(">", "%3E").replace("<", "%3C")

@@ -75,11 +75,20 @@ def decide(results: list[SourceResult], rules: Rules) -> Decision:
         if r.status is Status.OK and (hit := _match(rules.benign_override, r))
     ]
 
+    # A high-weight source that failed or has never seen the IOC cannot back a SAFE verdict:
+    # abuse.ch feeds only list known-bad items, so "no match" there is weak evidence.
+    blockers = [
+        r.source
+        for r in rows
+        if r.source in rules.high_weight
+        and r.status in (Status.ERROR, Status.RATE_LIMITED, Status.NOT_FOUND)
+    ]
+
     final: Level
     if malicious_rows:
         final = Level.MALICIOUS
     elif suspicious_rows:
-        if overrides:
+        if overrides and not blockers:
             final = Level.SAFE
             reasons.append(
                 f"benign override ({'; '.join(overrides)}) downgrades suspicious -> safe"
@@ -87,18 +96,13 @@ def decide(results: list[SourceResult], rules: Rules) -> Decision:
         else:
             final = Level.SUSPICIOUS
     else:
-        blockers = [
-            r.source
-            for r in rows
-            if r.source in rules.high_weight and r.status in (Status.ERROR, Status.RATE_LIMITED)
-        ]
         if len(verdict_rows) >= rules.min_sources_for_safe and not blockers:
             final = Level.SAFE
             reasons.append(f"{len(verdict_rows)} sources returned no hits")
         else:
             final = Level.UNKNOWN
             if blockers:
-                reasons.append(f"high-weight source unavailable: {', '.join(blockers)}")
+                reasons.append(f"high-weight source gave no answer: {', '.join(blockers)}")
             if len(verdict_rows) < rules.min_sources_for_safe:
                 reasons.append(
                     f"only {len(verdict_rows)} verdict-bearing source(s) answered; "

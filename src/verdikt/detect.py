@@ -104,7 +104,8 @@ def detect(raw: str, internal_domains: Iterable[str] = ()) -> IOC:
     if ip is not None:
         if not ip.is_global:
             raise DetectError(f"refusing internal IP {ip}: never sent to third parties")
-        return IOC(value=ip.compressed, type=IOCType.IP)
+        mapped = ip.ipv4_mapped if isinstance(ip, ipaddress.IPv6Address) else None
+        return IOC(value=(mapped or ip).compressed, type=IOCType.IP)
 
     if "://" not in text and "/" in text:
         text = "http://" + text

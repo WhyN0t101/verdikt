@@ -36,7 +36,6 @@ EXIT_CODES = {
     Level.SUSPICIOUS: 10,
     Level.MALICIOUS: 11,
     Level.UNKNOWN: 12,
-    Level.INFO: 0,
 }
 # bulk: highest severity wins
 _BULK_ORDER = {0: 0, 12: 1, 10: 2, 11: 3}
@@ -55,10 +54,6 @@ def exit_code(level: Level) -> int:
 
 def worst(codes: list[int]) -> int:
     return max(codes, key=lambda c: _BULK_ORDER[c]) if codes else 0
-
-
-def _settings() -> Settings:
-    return get_settings()
 
 
 async def _with_engine[T](
@@ -142,7 +137,7 @@ def check(
     ] = Level.SUSPICIOUS,
 ) -> None:
     """Check one IOC."""
-    settings = _settings()
+    settings = get_settings()
 
     async def run(engine: Engine, http: httpx.AsyncClient) -> Report:
         report = await engine.check(ioc, no_cache=no_cache)
@@ -175,7 +170,7 @@ def bulk(
     min_level: Annotated[Level, typer.Option("--min-level")] = Level.SUSPICIOUS,
 ) -> None:
     """Check one IOC per line. Sequential, so the limiters and daily budgets are respected."""
-    settings = _settings()
+    settings = get_settings()
     iocs = _read_iocs(file)
 
     async def run(engine: Engine, http: httpx.AsyncClient) -> tuple[list[int], int]:
@@ -206,7 +201,7 @@ def bulk(
 @app.command()
 def sources() -> None:
     """List sources, whether they are enabled, and today's quota use."""
-    settings = _settings()
+    settings = get_settings()
 
     async def run(engine: Engine, http: httpx.AsyncClient) -> None:
         table = Table(show_header=True, header_style="bold")
@@ -226,7 +221,7 @@ def cache_clear(
     source: Annotated[str | None, typer.Option("--source", help="Only this source")] = None,
 ) -> None:
     """Delete cached source results (history is kept)."""
-    settings = _settings()
+    settings = get_settings()
 
     async def run(engine: Engine, http: httpx.AsyncClient) -> None:
         n = engine.cache.clear(source)

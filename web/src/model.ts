@@ -2,7 +2,6 @@ import type { components } from "./types";
 
 type S = components["schemas"];
 export type Report = S["Report"];
-export type SourceResult = S["SourceResult"];
 export type GeoPoint = S["GeoPoint"];
 export type Graph = S["Graph"];
 export type GraphNode = S["GraphNode"];
