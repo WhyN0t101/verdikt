@@ -52,6 +52,18 @@ Network notes:
 - A Shuffle worker inside Docker reaches the host under another name (for example `host.docker.internal`), which the Host check rejects. Run verdikt in the same network namespace, or front it with a reverse proxy that rewrites the `Host` header. Do not loosen the check without understanding the DNS-rebinding risk (see `docs/API.md`).
 - Treat the token like a password. Anything holding it can spend your source quotas.
 
+## Scheduled watchlist and batch jobs
+
+```bash
+# every morning: re-check the watchlist and tell Slack about verdict changes
+0 7 * * *  cd /path/to/verdikt && uv run verdikt watch run --notify slack --min-level suspicious
+
+# a ticket exported to a text file -> one CSV row per indicator
+uv run verdikt bulk ticket.txt --text --csv > results.csv   # exit code is the worst verdict
+```
+
+On Windows use Task Scheduler with the same commands. A watchlist re-check skips the cache and spends source quota for every entry (maximum 50). Refresh the local feeds with `verdikt feeds update` on whatever schedule suits you; there is no built-in scheduler.
+
 ## SIEM and STIX
 
 - **SIEM:** tail the JSON-lines audit log (`audit.jsonl`, see the README) with any log shipper. Events are one per check and one per analyst feedback, carry the defanged indicator and the verdict, and contain no keys, raw vendor data or feed text. Alert on `level` and `confidence` in your SIEM rules.

@@ -3,7 +3,10 @@
 No network, no keys, no history on disk. `cd web && npm run e2e` starts this itself.
 """
 
+import json
 import os
+import tempfile
+from pathlib import Path
 
 import httpx
 import uvicorn
@@ -13,11 +16,14 @@ from verdikt.cache import Cache
 from verdikt.config import Settings, load_rules
 from verdikt.engine import Engine
 from verdikt.models import IOC, IOCType, RelatedIOC, SourceResult, Status
+from verdikt.sources import feeds
 from verdikt.sources.base import BaseSource, Gate, Source
 
 PORT = int(os.environ.get("VERDIKT_E2E_PORT", "8768"))
 TOKEN = "e2e-token"  # noqa: S105
 BAD = {"185.220.101.4", "evil.example"}
+SAMPLES = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "feeds"
+KEV_ID = next(iter(feeds.parse_kev((SAMPLES / "kev.json").read_bytes())))
 
 
 class FakeVirusTotal(BaseSource):
@@ -78,10 +84,37 @@ class FakeFeed(BaseSource):
         )
 
 
+class FakeInternetDB(BaseSource):
+    """Context row that reports two CVEs: one in the KEV sample, one with an EPSS score."""
+
+    name = "internetdb"
+    supports = frozenset({IOCType.IP})
+    rate = (1000, 1.0)
+
+    async def lookup(self, ioc: IOC, http: Gate) -> SourceResult:
+        return self.result(
+            Status.OK,
+            "2 open port(s), 2 CVE(s)",
+            metrics={"ports": 2, "vulns": 2},
+            link=f"https://example.invalid/internetdb/{ioc.value}",
+            raw={"vulns": [KEV_ID, "CVE-1999-0001"]},
+        )
+
+
+def feeds_dir() -> Path:
+    """KEV and EPSS data from the fixtures; no meta.json, so the UI shows 'no feeds yet'."""
+    d = Path(tempfile.mkdtemp(prefix="verdikt-e2e-feeds-"))
+    (d / "kev.json").write_text(
+        json.dumps(feeds.parse_kev((SAMPLES / "kev.json").read_bytes())), encoding="utf-8"
+    )
+    feeds._build_epss(d, feeds.parse_epss((SAMPLES / "epss.csv.gz").read_bytes()))
+    return d
+
+
 def main() -> None:
-    sources: list[Source] = [FakeVirusTotal(), FakeAbuseIPDB(), FakeFeed()]
+    sources: list[Source] = [FakeVirusTotal(), FakeAbuseIPDB(), FakeFeed(), FakeInternetDB()]
     engine = Engine(
-        Settings(_env_file=None),  # pyright: ignore[reportCallIssue]
+        Settings(_env_file=None, feeds_dir=feeds_dir()),  # pyright: ignore[reportCallIssue]
         load_rules(),
         Cache(":memory:"),
         httpx.AsyncClient(),

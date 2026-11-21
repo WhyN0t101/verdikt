@@ -106,6 +106,110 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stats */
+        get: operations["stats_api_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/watchlist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Watchlist */
+        get: operations["watchlist_api_watchlist_get"];
+        put?: never;
+        /** Watch Add */
+        post: operations["watch_add_api_watchlist_post"];
+        /** Watch Remove */
+        delete: operations["watch_remove_api_watchlist_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/watchlist/recheck": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Watch Recheck */
+        post: operations["watch_recheck_api_watchlist_recheck_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/feeds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Feeds Info */
+        get: operations["feeds_info_api_feeds_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/feeds/update": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Feeds Refresh */
+        post: operations["feeds_refresh_api_feeds_update_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/extract": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Extract */
+        post: operations["extract_api_extract_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sources": {
         parameters: {
             query?: never;
@@ -160,6 +264,118 @@ export interface components {
          * @enum {string}
          */
         Confidence: "low" | "medium" | "high";
+        /**
+         * CveInfo
+         * @description A CVE found on a host (InternetDB) with CISA KEV and EPSS context. Not a verdict input.
+         */
+        CveInfo: {
+            /** Id */
+            id: string;
+            /**
+             * Kev
+             * @default false
+             */
+            kev: boolean;
+            /** Kev Name */
+            kev_name: string | null;
+            /** Kev Added */
+            kev_added: string | null;
+            /**
+             * Ransomware
+             * @default false
+             */
+            ransomware: boolean;
+            /** Epss */
+            epss: number | null;
+            /** Percentile */
+            percentile: number | null;
+        };
+        /** DayCount */
+        DayCount: {
+            /** Day */
+            day: string;
+            /**
+             * Malicious
+             * @default 0
+             */
+            malicious: number;
+            /**
+             * Suspicious
+             * @default 0
+             */
+            suspicious: number;
+            /**
+             * Safe
+             * @default 0
+             */
+            safe: number;
+            /**
+             * Unknown
+             * @default 0
+             */
+            unknown: number;
+        };
+        /** ExtractRequest */
+        ExtractRequest: {
+            /** Text */
+            text: string;
+        };
+        /** ExtractedIOC */
+        ExtractedIOC: {
+            /** Value */
+            value: string;
+            type: components["schemas"]["IOCType"];
+        };
+        /** Extraction */
+        Extraction: {
+            /** Items */
+            items: components["schemas"]["ExtractedIOC"][];
+            /** Skipped */
+            skipped: components["schemas"]["Skipped"][];
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
+        };
+        /** FeedInfo */
+        FeedInfo: {
+            /** Name */
+            name: string;
+            /** Count */
+            count: number;
+            /** Fetched At */
+            fetched_at: string;
+        };
+        /** FeedUpdate */
+        FeedUpdate: {
+            /** Name */
+            name: string;
+            /** Ok */
+            ok: boolean;
+            /** Count */
+            count: number;
+            /** Detail */
+            detail: string;
+        };
+        /** FeedbackCounts */
+        FeedbackCounts: {
+            /**
+             * False Positive
+             * @default 0
+             */
+            false_positive: number;
+            /**
+             * False Negative
+             * @default 0
+             */
+            false_negative: number;
+            /**
+             * Correct
+             * @default 0
+             */
+            correct: number;
+        };
         /** FeedbackEntry */
         FeedbackEntry: {
             /** Id */
@@ -265,6 +481,17 @@ export interface components {
          * @enum {string}
          */
         Level: "malicious" | "suspicious" | "safe" | "info" | "unknown";
+        /** Recurring */
+        Recurring: {
+            /** Value */
+            value: string;
+            /** Kind */
+            kind: string;
+            /** Reports */
+            reports: number;
+            /** Last Level */
+            last_level: string;
+        };
         /** RelatedIOC */
         RelatedIOC: {
             /** Value */
@@ -283,7 +510,7 @@ export interface components {
         Report: {
             /**
              * Schema Version
-             * @default 2
+             * @default 3
              */
             schema_version: number;
             /** Id */
@@ -307,6 +534,8 @@ export interface components {
             graph: components["schemas"]["Graph"];
             /** Seen Before */
             seen_before: components["schemas"]["SeenBefore"][];
+            /** Cves */
+            cves: components["schemas"]["CveInfo"][];
             /**
              * Duration Ms
              * @default 0
@@ -351,6 +580,32 @@ export interface components {
             created_at: string;
             /** Shared */
             shared: string[];
+        };
+        /** Skipped */
+        Skipped: {
+            /** Value */
+            value: string;
+            /** Reason */
+            reason: string;
+        };
+        /** SourceHealth */
+        SourceHealth: {
+            /** Source */
+            source: string;
+            /** Checks */
+            checks: number;
+            /** Ok */
+            ok: number;
+            /** Errors */
+            errors: number;
+            /** Rate Limited */
+            rate_limited: number;
+            /** Not Found */
+            not_found: number;
+            /** Cached */
+            cached: number;
+            /** Avg Ms */
+            avg_ms: number;
         };
         /** SourceInfo */
         SourceInfo: {
@@ -414,6 +669,20 @@ export interface components {
                 [key: string]: unknown;
             } | null;
         };
+        /** Stats */
+        Stats: {
+            /** Days */
+            days: number;
+            /** Total */
+            total: number;
+            /** By Day */
+            by_day: components["schemas"]["DayCount"][];
+            /** Sources */
+            sources: components["schemas"]["SourceHealth"][];
+            /** Recurring */
+            recurring: components["schemas"]["Recurring"][];
+            feedback: components["schemas"]["FeedbackCounts"];
+        };
         /**
          * Status
          * @enum {string}
@@ -431,6 +700,65 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** WatchChange */
+        WatchChange: {
+            /** Ioc */
+            ioc: string;
+            /** Before */
+            before: string;
+            /** After */
+            after: string;
+            /** Report Id */
+            report_id: string;
+        };
+        /** WatchEntry */
+        WatchEntry: {
+            /** Ioc */
+            ioc: string;
+            /** Ioc Type */
+            ioc_type: string;
+            /**
+             * Added At
+             * Format: date-time
+             */
+            added_at: string;
+            /** Last Checked At */
+            last_checked_at: string | null;
+            /** Last Level */
+            last_level: string | null;
+            /** Last Report Id */
+            last_report_id: string | null;
+        };
+        /** WatchEvent */
+        WatchEvent: {
+            /** Id */
+            id: number;
+            /** Ioc */
+            ioc: string;
+            /** From Level */
+            from_level: string;
+            /** To Level */
+            to_level: string;
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Report Id */
+            report_id: string;
+        };
+        /** WatchRequest */
+        WatchRequest: {
+            /** Report Id */
+            report_id: string;
+        };
+        /** WatchState */
+        WatchState: {
+            /** Entries */
+            entries: components["schemas"]["WatchEntry"][];
+            /** Events */
+            events: components["schemas"]["WatchEvent"][];
         };
     };
     responses: never;
@@ -621,6 +949,214 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FeedbackEntry"][];
+                };
+            };
+        };
+    };
+    stats_api_stats_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Stats"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    watchlist_api_watchlist_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WatchState"];
+                };
+            };
+        };
+    };
+    watch_add_api_watchlist_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WatchState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    watch_remove_api_watchlist_delete: {
+        parameters: {
+            query: {
+                ioc: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WatchState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    watch_recheck_api_watchlist_recheck_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WatchChange"][];
+                };
+            };
+        };
+    };
+    feeds_info_api_feeds_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedInfo"][];
+                };
+            };
+        };
+    };
+    feeds_refresh_api_feeds_update_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedUpdate"][];
+                };
+            };
+        };
+    };
+    extract_api_extract_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExtractRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Extraction"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

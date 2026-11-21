@@ -17,12 +17,22 @@ from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from verdikt.cache import FeedbackEntry, ReportSummary
+from verdikt.cache import (
+    WATCHLIST_MAX,
+    FeedbackEntry,
+    ReportSummary,
+    Stats,
+    WatchEntry,
+    WatchEvent,
+)
 from verdikt.config import get_settings
 from verdikt.detect import DetectError
 from verdikt.engine import Engine, SourceInfo, build_engine
+from verdikt.extract import Extraction, extract_iocs
 from verdikt.models import Model, Report
+from verdikt.sources.feeds import feeds_status, update_feeds
 from verdikt.stix import to_stix
+from verdikt.watch import WatchChange, recheck
 
 TOKEN_HEADER = "x-verdikt-token"  # noqa: S105
 TOKEN_PLACEHOLDER = "<!--VERDIKT_TOKEN-->"  # noqa: S105
@@ -42,6 +52,32 @@ CSP = (
     "img-src 'self' data:; font-src 'self' data:; connect-src 'self'; "
     "frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
 )
+
+
+class WatchRequest(BaseModel):
+    report_id: str
+
+
+class ExtractRequest(BaseModel):
+    text: str = Field(max_length=200_000)
+
+
+class WatchState(Model):
+    entries: list[WatchEntry]
+    events: list[WatchEvent]
+
+
+class FeedInfo(Model):
+    name: str
+    count: int
+    fetched_at: str
+
+
+class FeedUpdate(Model):
+    name: str
+    ok: bool
+    count: int
+    detail: str
 
 
 class FeedbackRequest(BaseModel):
@@ -173,6 +209,51 @@ def create_app(
     @app.get("/api/feedback", response_model=list[FeedbackEntry])
     async def feedback(engine: EngineDep) -> list[FeedbackEntry]:
         return engine.cache.list_feedback()
+
+    @app.get("/api/stats", response_model=Stats)
+    async def stats(engine: EngineDep, days: Annotated[int, Query(ge=1, le=90)] = 30) -> Stats:
+        return engine.cache.stats(days)
+
+    @app.get("/api/watchlist", response_model=WatchState)
+    async def watchlist(engine: EngineDep) -> WatchState:
+        return WatchState(entries=engine.cache.watch_list(), events=engine.cache.watch_events())
+
+    @app.post("/api/watchlist", response_model=WatchState)
+    async def watch_add(body: WatchRequest, engine: EngineDep) -> WatchState:
+        found = engine.cache.get_report(body.report_id)
+        if found is None:
+            raise HTTPException(status_code=404, detail="report not found")
+        if not engine.cache.watch_add(found.ioc, found.ioc_type.value):
+            raise HTTPException(status_code=409, detail=f"watchlist is full ({WATCHLIST_MAX})")
+        engine.cache.watch_record(found)  # the report becomes the baseline
+        return WatchState(entries=engine.cache.watch_list(), events=engine.cache.watch_events())
+
+    @app.delete("/api/watchlist", response_model=WatchState)
+    async def watch_remove(ioc: str, engine: EngineDep) -> WatchState:
+        engine.cache.watch_remove(ioc)
+        return WatchState(entries=engine.cache.watch_list(), events=engine.cache.watch_events())
+
+    @app.post("/api/watchlist/recheck", response_model=list[WatchChange])
+    async def watch_recheck(engine: EngineDep) -> list[WatchChange]:
+        changes, _ = await recheck(engine)
+        return changes
+
+    @app.get("/api/feeds", response_model=list[FeedInfo])
+    async def feeds_info(engine: EngineDep) -> list[FeedInfo]:
+        status = feeds_status(engine.settings.resolved_feeds_dir)
+        return [
+            FeedInfo(name=n, count=int(i.get("count", 0)), fetched_at=str(i.get("fetched_at", "")))
+            for n, i in status.items()
+        ]
+
+    @app.post("/api/feeds/update", response_model=list[FeedUpdate])
+    async def feeds_refresh(engine: EngineDep) -> list[FeedUpdate]:
+        results = await update_feeds(engine.http, engine.settings.resolved_feeds_dir)
+        return [FeedUpdate(name=r.name, ok=r.ok, count=r.count, detail=r.detail) for r in results]
+
+    @app.post("/api/extract", response_model=Extraction)
+    async def extract(body: ExtractRequest, engine: EngineDep) -> Extraction:
+        return extract_iocs(body.text, engine.settings.internal_domain_list)
 
     @app.get("/api/sources", response_model=list[SourceInfo])
     async def sources(engine: EngineDep) -> list[SourceInfo]:

@@ -5,7 +5,9 @@ from __future__ import annotations
 from verdikt.config import Settings
 from verdikt.sources.abuseipdb import AbuseIPDB
 from verdikt.sources.base import BaseSource, Source
+from verdikt.sources.feeds import LocalFeeds
 from verdikt.sources.greynoise import GreyNoise
+from verdikt.sources.hashlookup import Hashlookup
 from verdikt.sources.hybrid import HybridAnalysis
 from verdikt.sources.internetdb import InternetDB
 from verdikt.sources.malwarebazaar import MalwareBazaar
@@ -33,5 +35,7 @@ def build_sources(settings: Settings) -> list[Source]:
         GreyNoise(k("greynoise_api_key")),
         InternetDB(),
         HybridAnalysis(k("hybrid_api_key")),
+        Hashlookup(),
+        LocalFeeds(settings.resolved_feeds_dir),
     ]
     return sources

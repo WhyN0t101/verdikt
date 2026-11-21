@@ -147,3 +147,102 @@ test("pages are served with a strict CSP and the token is injected", async ({ pa
   expect(res?.headers()["content-security-policy"]).toContain("default-src 'self'");
   expect(await page.locator('meta[name="verdikt-token"]').getAttribute("content")).toBe("e2e-token");
 });
+
+async function goto(page: Page, view: "Check" | "Overview" | "Batch") {
+  await page.getByRole("navigation", { name: "Views" }).getByRole("button", { name: view }).click();
+}
+
+test("a report shows CVEs with KEV and EPSS context", async ({ page }) => {
+  await page.goto("/");
+  await check(page, BAD_IP);
+  const cves = page.getByRole("region", { name: "Vulnerabilities" });
+  await expect(cves).toContainText("CVE-1999-0001");
+  await expect(cves).toContainText("EPSS 4.8%");
+  await expect(cves.getByText("KEV", { exact: true })).toBeVisible();
+  await expect(cves.getByRole("link").first()).toHaveAttribute("rel", /noopener/);
+  // context only: the verdict does not depend on CVEs
+  await expect(page.getByRole("region", { name: "Verdict" })).toContainText("Malicious");
+});
+
+test("overview shows activity, source health, recurring infrastructure and feeds", async ({ page }) => {
+  await page.goto("/");
+  await check(page, BAD_IP);
+  await check(page, BAD_IP); // twice, so it counts as recurring
+  await goto(page, "Overview");
+  await expect(page.getByRole("img", { name: /Checks per day/ })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Source health" })).toContainText("virustotal");
+  await expect(page.getByRole("region", { name: "Recurring infrastructure" })).toContainText(BAD_IP);
+  await expect(page.getByRole("region", { name: "Local feeds" })).toContainText("No feeds yet");
+  await expect(page.getByRole("region", { name: "Feedback" })).toBeVisible();
+
+  // a recurring row can start a new check and returns to the Check view
+  await page.getByRole("button", { name: `Check ${BAD_IP}` }).click();
+  await expect(page.getByRole("region", { name: "Verdict" })).toContainText(BAD_IP);
+  await expect(page.getByRole("navigation", { name: "Views" }).getByRole("button", { name: "Check" })).toHaveAttribute("aria-current", "page");
+});
+
+test("feedback shows up in the overview counts", async ({ page }) => {
+  await page.goto("/");
+  await check(page, BAD_IP);
+  await page.getByRole("button", { name: "False negative" }).click();
+  await expect(page.getByText("Feedback recorded.")).toBeVisible();
+  await goto(page, "Overview");
+  await expect(page.getByRole("region", { name: "Feedback" })).toContainText("False negative");
+});
+
+test("watchlist: watch a report, re-check with no change, remove", async ({ page }) => {
+  await page.goto("/");
+  await check(page, GOOD_IP);
+  await page.getByRole("button", { name: "Watch", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Watching" })).toBeDisabled();
+
+  await goto(page, "Overview");
+  const watch = page.getByRole("region", { name: "Watchlist" });
+  await expect(watch).toContainText(GOOD_IP);
+  await expect(watch).toContainText("Safe");
+  await watch.getByRole("button", { name: "Re-check all" }).click();
+  await expect(watch).toContainText("No verdict changed.");
+  await watch.getByRole("button", { name: `Stop watching ${GOOD_IP}` }).click();
+  await expect(watch).toContainText("Nothing watched yet");
+});
+
+test("batch: paste a ticket, extract, check all, skip internal targets, export CSV", async ({ page }) => {
+  await page.goto("/");
+  await goto(page, "Batch");
+  const ticket = `Beacon from ${BAD_IP.replaceAll(".", "[.]")} to ${GOOD_IP}. Ignore 192.168.1.10. Dropped file md5 44d88612fea8a8f36de82e1278abb02f.`;
+  await page.getByLabel("Text containing indicators").fill(ticket);
+  await page.getByRole("button", { name: "Extract indicators" }).click();
+
+  const results = page.getByRole("region", { name: "Batch results" });
+  await expect(results).toContainText("3 indicators found");
+  await expect(results).toContainText("1 skipped");
+  await expect(results.getByText("192.168.1.10")).toBeHidden(); // inside the closed details
+  await expect(results.getByRole("table")).not.toContainText("192.168");
+
+  await results.getByRole("button", { name: /Check all 3/ }).click();
+  await expect(results).toContainText("3 checked", { timeout: 15_000 });
+  await expect(results.getByRole("row", { name: new RegExp(BAD_IP.replaceAll(".", "\.")) })).toContainText("Malicious");
+  await expect(results.getByRole("row", { name: new RegExp(GOOD_IP.replaceAll(".", "\.")) })).toContainText("Safe");
+
+  const download = page.waitForEvent("download");
+  await results.getByRole("button", { name: "Export CSV" }).click();
+  const file = await download;
+  expect(file.suggestedFilename()).toBe("verdikt-batch.csv");
+  const csv = await (await import("node:fs/promises")).readFile((await file.path()) ?? "", "utf-8");
+  const lines = csv.trim().split("\n");
+  expect(lines[0]).toBe("ioc,type,level,confidence,agreeing,total,report_id,reasons");
+  expect(lines).toHaveLength(4);
+  expect(csv).toContain(`${BAD_IP},ip,malicious`);
+
+  // opening a row goes to the Check view with that report
+  await results.getByRole("button", { name: `Open report for ${BAD_IP}` }).click();
+  await expect(page.getByRole("region", { name: "Verdict" })).toContainText(BAD_IP);
+});
+
+test("batch: text with no indicators says so", async ({ page }) => {
+  await page.goto("/");
+  await goto(page, "Batch");
+  await page.getByLabel("Text containing indicators").fill("nothing to see here");
+  await page.getByRole("button", { name: "Extract indicators" }).click();
+  await expect(page.getByRole("region", { name: "Batch results" })).toContainText("No indicators found");
+});

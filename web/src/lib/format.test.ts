@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clock, defang, formatDuration, formatQuota, shortenMiddle, typeTag } from "./format";
+import { ago, clock, defang, formatDuration, formatQuota, shortenMiddle, typeTag } from "./format";
 
 describe("defang", () => {
   it.each([
@@ -27,4 +27,15 @@ describe("formatters", () => {
   });
   it("typeTag", () => expect(typeTag("domain")).toBe("DOM"));
   it("clock is HH:MM:SS", () => expect(clock("2026-01-01T14:03:15")).toBe("14:03:15"));
+});
+
+describe("ago", () => {
+  const now = Date.parse("2026-01-02T12:00:00Z");
+  it.each([
+    ["2026-01-02T11:59:40Z", "just now"],
+    ["2026-01-02T11:55:00Z", "5 min ago"],
+    ["2026-01-02T09:00:00Z", "3 h ago"],
+    ["2025-12-31T12:00:00Z", "2 d ago"],
+    ["not a date", "-"],
+  ])("%s", (iso, want) => expect(ago(iso, now)).toBe(want));
 });

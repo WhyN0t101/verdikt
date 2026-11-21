@@ -13,7 +13,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from verdikt.models import Model, Report, SeenBefore, SourceResult
+from verdikt.models import Model, Report, SeenBefore, SourceResult, Status
 
 Clock = Callable[[], datetime]
 
@@ -32,6 +32,19 @@ CREATE INDEX IF NOT EXISTS ioc_index_value ON ioc_index (value);
 CREATE TABLE IF NOT EXISTS feedback (
   id INTEGER PRIMARY KEY AUTOINCREMENT, report_id TEXT NOT NULL, ioc TEXT NOT NULL,
   level TEXT NOT NULL, label TEXT NOT NULL, note TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS source_stats (
+  day TEXT NOT NULL, source TEXT NOT NULL, checks INTEGER NOT NULL DEFAULT 0,
+  ok INTEGER NOT NULL DEFAULT 0, errors INTEGER NOT NULL DEFAULT 0,
+  rate_limited INTEGER NOT NULL DEFAULT 0, not_found INTEGER NOT NULL DEFAULT 0,
+  cached INTEGER NOT NULL DEFAULT 0, ms INTEGER NOT NULL DEFAULT 0,
+  fetched INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, source));
+CREATE TABLE IF NOT EXISTS watchlist (
+  ioc TEXT PRIMARY KEY, ioc_type TEXT NOT NULL, added_at TEXT NOT NULL,
+  last_checked_at TEXT, last_level TEXT, last_report_id TEXT);
+CREATE TABLE IF NOT EXISTS watch_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, ioc TEXT NOT NULL, from_level TEXT NOT NULL,
+  to_level TEXT NOT NULL, at TEXT NOT NULL, report_id TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS budget (
   source TEXT NOT NULL, day TEXT NOT NULL, used INTEGER NOT NULL,
   PRIMARY KEY (source, day));
@@ -42,6 +55,8 @@ REPORT_RETENTION = timedelta(days=90)
 CACHE_MAX_AGE = timedelta(days=7)  # longest source TTL: older cached answers can never be served
 FEEDBACK_LABELS = ("false_positive", "false_negative", "correct")
 _CORRELATE_MAX = 10
+WATCHLIST_MAX = 50  # a re-check spends quota for every entry
+STATS_KEEP = timedelta(days=90)
 _NO_LIMIT = 2**62  # sqlite INTEGER max is 2**63 - 1
 
 
@@ -65,6 +80,65 @@ class FeedbackEntry(Model):
     label: str
     note: str
     created_at: datetime
+
+
+class DayCount(Model):
+    day: str
+    malicious: int = 0
+    suspicious: int = 0
+    safe: int = 0
+    unknown: int = 0
+
+
+class SourceHealth(Model):
+    source: str
+    checks: int
+    ok: int
+    errors: int
+    rate_limited: int
+    not_found: int
+    cached: int
+    avg_ms: int  # over live (non-cached) calls only
+
+
+class Recurring(Model):
+    value: str
+    kind: str
+    reports: int
+    last_level: str
+
+
+class FeedbackCounts(Model):
+    false_positive: int = 0
+    false_negative: int = 0
+    correct: int = 0
+
+
+class Stats(Model):
+    days: int
+    total: int
+    by_day: list[DayCount]
+    sources: list[SourceHealth]
+    recurring: list[Recurring]
+    feedback: FeedbackCounts
+
+
+class WatchEntry(Model):
+    ioc: str
+    ioc_type: str
+    added_at: datetime
+    last_checked_at: datetime | None = None
+    last_level: str | None = None
+    last_report_id: str | None = None
+
+
+class WatchEvent(Model):
+    id: int
+    ioc: str
+    from_level: str
+    to_level: str
+    at: datetime
+    report_id: str
 
 
 class Cache:
@@ -109,6 +183,10 @@ class Cache:
                 "DELETE FROM budget WHERE day < ?", ((now - CACHE_MAX_AGE).date().isoformat(),)
             )
             counts["budget"] = cur.rowcount
+            cur = self._db.execute(
+                "DELETE FROM source_stats WHERE day < ?", ((now - STATS_KEEP).date().isoformat(),)
+            )
+            counts["source_stats"] = cur.rowcount
         return counts
 
     def prune(self) -> dict[str, int]:
@@ -246,6 +324,167 @@ class Cache:
             ).fetchall()
         return [
             ReportSummary(id=r[0], ioc=r[1], ioc_type=r[2], level=r[3], created_at=r[4])
+            for r in rows
+        ]
+
+    def checked_since(self, age: timedelta) -> set[str]:
+        """IOCs that have a stored report newer than `age` (for `bulk --resume`)."""
+        cutoff = (self._clock() - age).isoformat()
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT DISTINCT ioc FROM reports WHERE created_at >= ?", (cutoff,)
+            ).fetchall()
+        return {str(r[0]) for r in rows}
+
+    # --- statistics ---------------------------------------------------------------------
+    def record_stats(self, results: list[SourceResult]) -> None:
+        """Count each source answer of one check: status, cache use and live latency."""
+        day = self._day()
+        with self._lock, self._db:
+            for r in results:
+                live = not r.cached and r.status is not Status.SKIPPED
+                self._db.execute(
+                    "INSERT INTO source_stats (day, source) VALUES (?,?) ON CONFLICT DO NOTHING",
+                    (day, r.source),
+                )
+                self._db.execute(
+                    "UPDATE source_stats SET checks=checks+1, ok=ok+?, errors=errors+?, "
+                    "rate_limited=rate_limited+?, not_found=not_found+?, cached=cached+?, "
+                    "ms=ms+?, fetched=fetched+? WHERE day=? AND source=?",
+                    (
+                        r.status is Status.OK,
+                        r.status is Status.ERROR,
+                        r.status is Status.RATE_LIMITED,
+                        r.status is Status.NOT_FOUND,
+                        r.cached,
+                        r.duration_ms if live else 0,
+                        live,
+                        day,
+                        r.source,
+                    ),
+                )
+
+    def stats(self, days: int = 30) -> Stats:
+        since = (self._clock() - timedelta(days=days)).isoformat()
+        since_day = (self._clock() - timedelta(days=days)).date().isoformat()
+        with self._lock:
+            level_rows = self._db.execute(
+                "SELECT substr(created_at,1,10), level, count(*) FROM reports "
+                "WHERE created_at >= ? GROUP BY 1, 2 ORDER BY 1",
+                (since,),
+            ).fetchall()
+            src_rows = self._db.execute(
+                "SELECT source, sum(checks), sum(ok), sum(errors), sum(rate_limited), "
+                "sum(not_found), sum(cached), sum(ms), sum(fetched) FROM source_stats "
+                "WHERE day >= ? GROUP BY source ORDER BY source",
+                (since_day,),
+            ).fetchall()
+            rec_rows = self._db.execute(
+                "SELECT i.value, i.kind, count(DISTINCT i.report_id) AS c, "
+                "(SELECT r2.level FROM ioc_index i2 JOIN reports r2 ON r2.id=i2.report_id "
+                " WHERE i2.value=i.value ORDER BY r2.created_at DESC LIMIT 1) "
+                "FROM ioc_index i JOIN reports r ON r.id=i.report_id "
+                "WHERE r.created_at >= ? AND i.kind != 'asn' "
+                "GROUP BY i.value, i.kind HAVING c >= 2 ORDER BY c DESC, i.value LIMIT 8",
+                (since,),
+            ).fetchall()
+            fb_rows = self._db.execute(
+                "SELECT label, count(*) FROM feedback WHERE created_at >= ? GROUP BY label",
+                (since,),
+            ).fetchall()
+        by_day: dict[str, DayCount] = {}
+        for day, level, n in level_rows:
+            entry = by_day.setdefault(day, DayCount(day=day))
+            if level in ("malicious", "suspicious", "safe", "unknown"):
+                setattr(entry, level, int(n))
+        return Stats(
+            days=days,
+            total=sum(int(n) for _, _, n in level_rows),
+            by_day=list(by_day.values()),
+            sources=[
+                SourceHealth(
+                    source=s,
+                    checks=int(c),
+                    ok=int(ok),
+                    errors=int(er),
+                    rate_limited=int(rl),
+                    not_found=int(nf),
+                    cached=int(ca),
+                    avg_ms=int(ms // fetched) if fetched else 0,
+                )
+                for s, c, ok, er, rl, nf, ca, ms, fetched in src_rows
+            ],
+            recurring=[
+                Recurring(value=v, kind=k, reports=int(c), last_level=lvl)
+                for v, k, c, lvl in rec_rows
+            ],
+            feedback=FeedbackCounts(
+                **{lab: int(n) for lab, n in fb_rows if lab in FEEDBACK_LABELS}
+            ),
+        )
+
+    # --- watchlist ----------------------------------------------------------------------
+    def watch_add(self, ioc: str, ioc_type: str) -> bool:
+        """False when the list is full; adding an existing entry is a no-op."""
+        with self._lock, self._db:
+            if self._db.execute("SELECT 1 FROM watchlist WHERE ioc=?", (ioc,)).fetchone():
+                return True
+            if self._db.execute("SELECT count(*) FROM watchlist").fetchone()[0] >= WATCHLIST_MAX:
+                return False
+            self._db.execute(
+                "INSERT INTO watchlist (ioc, ioc_type, added_at) VALUES (?,?,?)",
+                (ioc, ioc_type, self._clock().isoformat()),
+            )
+            return True
+
+    def watch_remove(self, ioc: str) -> bool:
+        with self._lock, self._db:
+            return self._db.execute("DELETE FROM watchlist WHERE ioc=?", (ioc,)).rowcount == 1
+
+    def watch_list(self) -> list[WatchEntry]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT ioc, ioc_type, added_at, last_checked_at, last_level, last_report_id "
+                "FROM watchlist ORDER BY added_at"
+            ).fetchall()
+        return [
+            WatchEntry.model_validate(dict(zip(WatchEntry.model_fields, r, strict=True)))
+            for r in rows
+        ]
+
+    def watch_record(self, report: Report) -> str | None:
+        """Store the latest result for an entry. Returns the previous level if it changed."""
+        with self._lock, self._db:
+            row = self._db.execute(
+                "SELECT last_level FROM watchlist WHERE ioc=?", (report.ioc,)
+            ).fetchone()
+            if row is None:
+                return None
+            previous: str | None = row[0]
+            now = self._clock().isoformat()
+            self._db.execute(
+                "UPDATE watchlist SET last_checked_at=?, last_level=?, last_report_id=? "
+                "WHERE ioc=?",
+                (now, report.level.value, report.id, report.ioc),
+            )
+            if previous is not None and previous != report.level.value:
+                self._db.execute(
+                    "INSERT INTO watch_events (ioc, from_level, to_level, at, report_id) "
+                    "VALUES (?,?,?,?,?)",
+                    (report.ioc, previous, report.level.value, now, report.id),
+                )
+                return previous
+            return None
+
+    def watch_events(self, limit: int = 20) -> list[WatchEvent]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id, ioc, from_level, to_level, at, report_id FROM watch_events "
+                "ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [
+            WatchEvent.model_validate(dict(zip(WatchEvent.model_fields, r, strict=True)))
             for r in rows
         ]
 

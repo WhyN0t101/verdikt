@@ -15,6 +15,8 @@ Each source lives in one file under `src/verdikt/sources/`. It maps the vendor r
 | `otx` | yes | yes | yes | yes | optional | 24 h | none | context only |
 | `greynoise` | yes | | | | optional | 24 h | none | context, benign override |
 | `internetdb` | yes | | | | none | 7 d | none | context only |
+| `hashlookup` | | | | yes | none | 7 d | none | verdict (softens or flags) |
+| `localfeeds` | yes | yes | | | none | local | none | blocklist, Tor, top sites |
 | `hybrid` | | | | yes | required | 7 d | 200 | verdict |
 
 "Context only" sources add data (ports, CVEs, hostnames) but never change the verdict. A source with a missing required key is disabled and is not queried.
@@ -34,6 +36,8 @@ Rule semantics: an integer means "metric is at least this value", a boolean mean
 | `otx` | `pulses` | INFO row. The pulse count includes every pulse that merely mentions the indicator and is capped at 50 (it was 50 for `example.com`) |
 | `greynoise` | `noise`, `riot` | INFO row; `riot` true downgrades SUSPICIOUS to SAFE |
 | `internetdb` | `ports`, `vulns`, `hostnames` | INFO row |
+| `hashlookup` | `known_good`, `known_malicious` | SUSPICIOUS when `known_malicious`; `known_good` softens SUSPICIOUS to SAFE |
+| `localfeeds` | `blocklisted`, `tor_exit`, `top_site` | MALICIOUS when `blocklisted`; `top_site` (exact Tranco match) softens SUSPICIOUS to SAFE; `tor_exit` is a tag |
 | `hybrid` | `malicious`, `threat_score`, `reports` | SUSPICIOUS when `malicious` is true |
 
 ## Outcomes every source handles
@@ -70,6 +74,13 @@ The abuse.ch v1 endpoints with the `Auth-Key` header are the ones implemented. a
 3. Register it in `sources/__init__.py`, add an empty key to `.env.example` and the field to `config.py`.
 4. Add rules to `rules.yaml` (and `high_weight` or `context_only` if relevant) and a row to the tables above.
 5. Test hit, miss, error and 429 with fixtures in `tests/fixtures/<name>/`. Record a real response once, then scrub keys, emails and account IDs and trim it to the fields used.
+
+## Local feeds and hashlookup
+
+- **localfeeds** reads files written by `verdikt feeds update`; it is disabled until they exist. Feodo Tracker (botnet C2 IPs) and Spamhaus DROP (hijacked or criminal networks, matched as CIDR) mean malicious. The Tor exit list only adds a tag. The Tranco list keeps the top 100,000 domains and matches exactly, so user-content hosts such as `evil.github.io` never inherit a popular parent. It is a list-only feed: "not listed" carries no weight.
+- **hashlookup** (CIRCL, keyless) is checked per hash. The real EICAR response carries `hashlookup:trust` 100 **and** a `KnownMalicious` flag, so trust is ignored and only the flag decides. A hit means "known file", not "benign": it can only soften a suspicious verdict, never a malicious one.
+- **CISA KEV and EPSS** are not sources: after the sources answer, the CVEs in InternetDB's `vulns` are looked up locally and attached to the report as `cves`, with a reason line when any is in KEV. They never change the verdict.
+- Feed URLs are in `src/verdikt/sources/feeds.py`. Downloads are capped at 40 MB each, one failing feed never stops the others or removes its old copy, and files are written atomically. Licenses differ per feed (Spamhaus DROP and Tranco have their own terms); check them before using verdikt commercially.
 
 ## Recorded fixtures
 

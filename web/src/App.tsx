@@ -5,9 +5,11 @@ import { CommandBar } from "./components/CommandBar";
 import { EmptyState } from "./components/EmptyState";
 import { HistoryList } from "./components/HistoryList";
 import { LevelBadge } from "./components/LevelBadge";
+import { Batch } from "./components/Batch";
 import { Logo } from "./components/Logo";
 import { LogStream } from "./components/LogStream";
 import { MapView } from "./components/MapView";
+import { Overview } from "./components/Overview";
 import { RawJson } from "./components/RawJson";
 import { SourceTable } from "./components/SourceTable";
 import { ReportActions } from "./components/ReportActions";
@@ -24,6 +26,13 @@ const TABS: { id: Tab; label: string; key: string }[] = [
   { id: "map", label: "Map", key: "1" },
   { id: "graph", label: "Graph", key: "2" },
   { id: "raw", label: "Raw JSON", key: "3" },
+];
+
+type View = "check" | "overview" | "batch";
+const VIEWS: { id: View; label: string }[] = [
+  { id: "check", label: "Check" },
+  { id: "overview", label: "Overview" },
+  { id: "batch", label: "Batch" },
 ];
 
 type Theme = "dark" | "light";
@@ -53,6 +62,7 @@ export default function App() {
   const [value, setValue] = useState("");
   const [report, setReport] = useState<Report | null>(null);
   const [tab, setTab] = useState<Tab>("map");
+  const [view, setView] = useState<View>("check");
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [openError, setOpenError] = useState<string | null>(null);
 
@@ -82,6 +92,7 @@ export default function App() {
     (ioc: string) => {
       if (check.isPending) return; // a late answer to the first check must not replace the second
       setValue(ioc);
+      setView("check");
       check.mutate(ioc);
     },
     [check],
@@ -93,6 +104,7 @@ export default function App() {
       setOpenError(null);
       setReport(r);
       setValue(r.ioc);
+      setView("check");
     } catch (e) {
       setOpenError(e instanceof Error ? e.message : "could not open the report");
     }
@@ -131,7 +143,10 @@ export default function App() {
     <div className="relative flex min-h-full flex-col lg:h-full">
       <header className="flex flex-wrap items-center gap-x-5 gap-y-3 border-b border-line bg-panel px-5 py-3">
         <Logo />
-        <CommandBar ref={input} value={value} pending={check.isPending} onChange={setValue} onSubmit={() => check.mutate(value)} />
+        <CommandBar ref={input} value={value} pending={check.isPending} onChange={setValue} onSubmit={() => {
+            setView("check");
+            check.mutate(value);
+          }} />
         <div className="ml-auto flex items-center gap-4 sm:ml-0">
           {report && <Readout label="Last check" value={formatDuration(report.duration_ms)} />}
           {vt && <Readout label="VirusTotal" value={formatQuota(vt.used_today, vt.daily_budget)} />}
@@ -156,7 +171,32 @@ export default function App() {
       </header>
 
 
-      <div className="grid min-h-0 flex-1 lg:grid-cols-[14rem_minmax(0,1fr)] xl:grid-cols-[14rem_minmax(0,1fr)_20rem]">
+      <nav aria-label="Views" className="flex gap-1 border-b border-line bg-panel px-5">
+        {VIEWS.map((v) => (
+          <button
+            key={v.id}
+            type="button"
+            aria-current={view === v.id ? "page" : undefined}
+            onClick={() => setView(v.id)}
+            className={`-mb-px border-b-2 px-3 py-2 text-sm ${view === v.id ? "border-accent text-ink" : "border-transparent text-muted hover:text-ink"}`}
+          >
+            {v.label}
+          </button>
+        ))}
+      </nav>
+
+      {view === "overview" && (
+        <div className="min-h-0 flex-1 overflow-auto">
+          <Overview onCheck={(ioc) => run(ioc)} />
+        </div>
+      )}
+      {view === "batch" && (
+        <div className="min-h-0 flex-1 overflow-auto">
+          <Batch onOpen={(id) => void open(id)} />
+        </div>
+      )}
+
+      <div hidden={view !== "check"} className="grid min-h-0 flex-1 lg:grid-cols-[14rem_minmax(0,1fr)] xl:grid-cols-[14rem_minmax(0,1fr)_20rem]">
         <aside className="order-3 border-t border-line bg-panel py-2 lg:order-none lg:overflow-y-auto lg:border-r lg:border-t-0">
           <h2 className="label px-4 pb-2 pt-1">History</h2>
           <HistoryList items={history.data ?? []} activeId={report?.id ?? null} onSelect={(id) => void open(id)} />

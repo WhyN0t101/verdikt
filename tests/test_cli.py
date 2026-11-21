@@ -171,3 +171,77 @@ def test_stix_output(use_profile: UseProfile) -> None:
     bundle = json.loads(result.stdout)
     assert bundle["type"] == "bundle"
     assert bundle["objects"][1]["pattern"] == "[ipv4-addr:value = '8.8.8.8']"
+
+
+def test_extract_command_lists_type_and_value(tmp_path: Path, use_profile: UseProfile) -> None:
+    use_profile("safe")
+    f = tmp_path / "ticket.txt"
+    f.write_text(
+        "beacon to 185.220.101[.]4 and 192.168.1.10, md5 44d88612fea8a8f36de82e1278abb02f",
+        encoding="utf-8",
+    )
+    result = runner.invoke(cli.app, ["extract", str(f)])
+    assert result.exit_code == 0
+    assert result.stdout.splitlines() == [
+        "ip\t185.220.101.4",
+        "md5\t44d88612fea8a8f36de82e1278abb02f",
+    ]
+    assert "192.168.1.10" in result.output  # reported as skipped, on stderr
+
+
+def test_bulk_text_csv(tmp_path: Path, use_profile: UseProfile) -> None:
+    import csv
+    import io
+
+    use_profile("malicious")
+    f = tmp_path / "ticket.txt"
+    f.write_text("seen 8.8.8.8 and 1.1.1.1 in the logs", encoding="utf-8")
+    result = runner.invoke(cli.app, ["bulk", str(f), "--text", "--csv"])
+    assert result.exit_code == 11
+    rows = list(csv.DictReader(io.StringIO(result.stdout)))
+    assert [r["ioc"] for r in rows] == ["1.1.1.1", "8.8.8.8"] or [r["ioc"] for r in rows] == [
+        "8.8.8.8",
+        "1.1.1.1",
+    ]
+    assert {r["level"] for r in rows} == {"malicious"}
+    assert set(rows[0]) == set(cli.CSV_FIELDS)
+
+
+def test_csv_cells_cannot_run_as_spreadsheet_formulas() -> None:
+    from verdikt.models import IOCType, Level, Report
+
+    r = Report(
+        id="x",
+        ioc="1.2.3.4",
+        ioc_type=IOCType.IP,
+        level=Level.SAFE,
+        agreeing=0,
+        total=0,
+        reasons=['=HYPERLINK("http://evil.example","click")', "+cmd", "@SUM(1)", "-1+1"],
+    )
+    cell = cli.csv_row(r)[-1]
+    assert cell.startswith("'=HYPERLINK")
+    assert cli.csv_row(r.model_copy(update={"reasons": ["-2+3"]}))[-1] == "'-2+3"
+
+
+def test_watch_add_and_empty_run(use_profile: UseProfile) -> None:
+    use_profile("safe")
+    assert runner.invoke(cli.app, ["watch", "add", "8.8.8.8"]).exit_code == 0
+    assert runner.invoke(cli.app, ["watch", "add", "192.168.1.10"]).exit_code == 1
+    result = runner.invoke(cli.app, ["watch", "run"])
+    assert result.exit_code == 0
+    assert "no changes" in result.output
+
+
+def make_settings(feeds: Path) -> Settings:
+    return Settings(_env_file=None, feeds_dir=feeds)  # pyright: ignore[reportCallIssue]
+
+
+def test_feeds_status_without_downloads(
+    use_profile: UseProfile, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    use_profile("safe")
+    monkeypatch.setattr(cli, "get_settings", lambda: make_settings(tmp_path / "none"))
+    result = runner.invoke(cli.app, ["feeds", "status"])
+    assert result.exit_code == 0
+    assert "feeds update" in result.output

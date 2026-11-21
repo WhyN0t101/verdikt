@@ -24,6 +24,14 @@ Responses also carry a strict `Content-Security-Policy` (scripts and connections
 | GET | `/api/reports/{id}/stix` | The report as a STIX 2.1 bundle (`Content-Type: application/stix+json`) |
 | POST | `/api/reports/{id}/feedback` | Body `{"label": "false_positive" \| "false_negative" \| "correct", "note": ""}` (note up to 500 characters); returns the stored entry |
 | GET | `/api/feedback` | Stored feedback, newest first |
+| GET | `/api/stats?days=30` | Dashboard data: checks per day by level, per-source health, recurring indicators, feedback counts (`days` 1 to 90) |
+| GET | `/api/watchlist` | Watched entries and the latest verdict changes |
+| POST | `/api/watchlist` | Body `{"report_id": "..."}`: watch that report's indicator, using it as the baseline. `409` when the list (50) is full |
+| DELETE | `/api/watchlist?ioc=...` | Stop watching an indicator |
+| POST | `/api/watchlist/recheck` | Re-check every entry without the cache; returns the verdict changes |
+| GET | `/api/feeds` | Downloaded feeds: `name`, `count`, `fetched_at` |
+| POST | `/api/feeds/update` | Download the feeds (about 14 MB); returns one result per feed |
+| POST | `/api/extract` | Body `{"text": "..."}` (up to 200,000 characters): indicators found, and skipped ones with the reason. Nothing is looked up |
 | GET | `/api/sources` | Per source: `name`, `enabled`, `requires_key`, `supports`, `used_today`, `daily_budget` |
 | GET | `/api/health` | `{"status": "ok"}` |
 | GET | `/` and `/assets/*` | The built single-page app |
@@ -49,11 +57,12 @@ Without the token header the same call returns `401`.
 
 | Field | Meaning |
 |---|---|
-| `schema_version` | Integer, currently 2 |
+| `schema_version` | Integer, currently 3 |
 | `id` | UUID4 hex |
 | `ioc`, `ioc_type` | Normalized indicator and its type (`ip`, `domain`, `url`, `md5`, `sha1`, `sha256`) |
 | `level` | `malicious`, `suspicious`, `safe` or `unknown` (never `info`) |
 | `confidence` | `low`, `medium` or `high`: weighted agreement with `level` (see `rules.yaml`). Never changes `level` |
+| `cves` | CVEs InternetDB reported for the host, with `kev`, `kev_name`, `kev_added`, `ransomware`, `epss`, `percentile`. Context only: never changes `level` |
 | `seen_before` | Earlier reports sharing this indicator or related infrastructure: `report_id`, `ioc`, `level`, `created_at`, `shared` |
 | `agreeing`, `total` | Verdict-bearing sources that agree with `level`, out of those that answered successfully |
 | `reasons` | Human-readable lines, one per rule that fired |

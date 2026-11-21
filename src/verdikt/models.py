@@ -8,7 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
-SCHEMA_VERSION = 2  # 2: added Report.confidence and Report.seen_before
+SCHEMA_VERSION = 3  # 2: confidence, seen_before. 3: cves
 
 
 class IOCType(StrEnum):
@@ -126,6 +126,18 @@ class Graph(Model):
     edges: list[GraphEdge] = Field(default_factory=list[GraphEdge])
 
 
+class CveInfo(Model):
+    """A CVE found on a host (InternetDB) with CISA KEV and EPSS context. Not a verdict input."""
+
+    id: str
+    kev: bool = False  # in CISA's Known Exploited Vulnerabilities catalog
+    kev_name: str | None = None
+    kev_added: str | None = None
+    ransomware: bool = False
+    epss: float | None = None  # probability of exploitation in the next 30 days
+    percentile: float | None = None
+
+
 class SeenBefore(Model):
     """An earlier report that shares an indicator with this one."""
 
@@ -150,6 +162,7 @@ class Report(Model):
     geo: list[GeoPoint] = Field(default_factory=list[GeoPoint])
     graph: Graph = Field(default_factory=Graph)
     seen_before: list[SeenBefore] = Field(default_factory=list[SeenBefore])
+    cves: list[CveInfo] = Field(default_factory=list[CveInfo])
     duration_ms: int = 0
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 

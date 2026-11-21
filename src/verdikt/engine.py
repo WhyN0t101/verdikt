@@ -18,7 +18,9 @@ from verdikt.cache import Cache
 from verdikt.config import Rules, Settings, load_rules
 from verdikt.detect import detect
 from verdikt.enrich import dns as dns_enrich
+from verdikt.enrich.cve import CveStore
 from verdikt.enrich.geo import GeoLookup
+from verdikt.jsonutil import arr, obj
 from verdikt.models import (
     IOC,
     GeoPoint,
@@ -90,6 +92,7 @@ class Engine:
         http: httpx.AsyncClient,
         sources: list[Source] | None = None,
         geo: GeoLookup | None = None,
+        cves: CveStore | None = None,
         limiter_factory: LimiterFactory = lambda n, s: AsyncLimiter(n, s),
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         backoff: float = BACKOFF,
@@ -102,6 +105,7 @@ class Engine:
         self._http = http
         self.sources = sources if sources is not None else build_sources(settings)
         self._geo = geo if geo is not None else GeoLookup(settings.geoip_dir)
+        self._cves = cves if cves is not None else CveStore(settings.resolved_feeds_dir)
         self._limiter_factory = limiter_factory
         self._limiters: dict[str, Limiter] = {}
         self._inflight: dict[tuple[str, str], asyncio.Future[SourceResult]] = {}
@@ -109,6 +113,10 @@ class Engine:
         self._backoff = backoff
         self._resolver = resolver
         self.audit = audit
+
+    @property
+    def http(self) -> httpx.AsyncClient:
+        return self._http
 
     # --- helpers ------------------------------------------------------------
     def _limiter(self, src: Source) -> Limiter:
@@ -193,6 +201,20 @@ class Engine:
         if self.settings.dns_resolve and (host := ioc.host) and ioc.type is not IOCType.IP:
             related.extend(await self._resolver(host))
 
+        cves = self._cves.lookup(
+            [
+                str(v)
+                for r in decision.results
+                if r.source == "internetdb"
+                for v in arr(obj(r.raw).get("vulns"))
+            ]
+        )
+        in_kev = sum(1 for c in cves if c.kev)
+        cve_reasons = (
+            [f"{in_kev} CVE(s) on this host are in CISA's KEV catalog (exploited in the wild)"]
+            if in_kev
+            else []
+        )
         geo = self._geo_points(ioc, decision.level, related)
         asn = next((f"AS{g.asn}" for g in geo if g.role == "ioc" and g.asn), None)
         graph = build_graph(ioc, decision.level, related, asn)
@@ -204,15 +226,17 @@ class Engine:
             agreeing=decision.agreeing,
             total=decision.total,
             confidence=decision.confidence,
-            reasons=decision.reasons,
+            reasons=[*decision.reasons, *cve_reasons],
             results=decision.results,
             geo=geo,
+            cves=cves,
             graph=graph,
             duration_ms=int((time.perf_counter() - started) * 1000),
             created_at=datetime.now(UTC),
         )
         report = report.model_copy(update={"seen_before": self.cache.correlate(report)})
         self.cache.save_report(report)
+        self.cache.record_stats(report.results)
         if self.audit:
             self.audit.check(report)
         return report

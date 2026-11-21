@@ -43,6 +43,17 @@ const TYPE_TAG: Record<IOCType, string> = {
 };
 export const typeTag = (t: IOCType): string => TYPE_TAG[t];
 
+/** Relative age for lists, e.g. `5 min ago`, `3 h ago`, `2 d ago`. */
+export function ago(iso: string, now: number = Date.now()): string {
+  const t = Date.parse(iso);
+  if (Number.isNaN(t)) return "-";
+  const s = Math.max(0, Math.round((now - t) / 1000));
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  return `${Math.floor(s / 86400)} d ago`;
+}
+
 export function formatDuration(ms: number): string {
   return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(1)} s`;
 }

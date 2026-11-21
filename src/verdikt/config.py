@@ -61,6 +61,7 @@ class Settings(BaseSettings):
     dns_resolve: bool = False
     report_retention_days: int = 90  # 0 keeps reports forever
     audit_log: Path | None = None
+    feeds_dir: Path | None = None
 
     @property
     def internal_domain_list(self) -> list[str]:
@@ -69,6 +70,10 @@ class Settings(BaseSettings):
     @property
     def resolved_db_path(self) -> Path:
         return self.db_path or user_data_dir() / "verdikt.db"
+
+    @property
+    def resolved_feeds_dir(self) -> Path:
+        return self.feeds_dir or user_data_dir() / "feeds"
 
     @property
     def resolved_audit_path(self) -> Path:

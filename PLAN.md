@@ -240,6 +240,7 @@ Integer value = "metric ≥ value". Boolean value = "metric is that value".
 ```yaml
 malicious:                      # any match -> MALICIOUS
   virustotal: {malicious: 5}
+  localfeeds: {blocklisted: true}   # Feodo C2 / Spamhaus DROP, matched locally
   abuseipdb: {score: 75}
   threatfox: {match: true}
   malwarebazaar: {match: true}
@@ -248,16 +249,19 @@ suspicious:                     # any match -> SUSPICIOUS
   virustotal: {malicious: 1, suspicious: 1}
   abuseipdb: {score: 25}
   hybrid: {malicious: true}
+  hashlookup: {known_malicious: true}
 benign_override:                # downgrade SUSPICIOUS -> SAFE; never touches MALICIOUS
   greynoise: {riot: true}
+  hashlookup: {known_good: true}    # known file with no malicious flag
+  localfeeds: {top_site: true}      # exact Tranco top-site match only
 # row level INFO, never count toward min_sources_for_safe. OTX pulse counts include mere mentions
 # (50 for example.com) and urlscan search has no verdicts on the free plan.
 context_only: [internetdb, greynoise, otx, urlscan]
 high_weight: [virustotal, threatfox, urlhaus, malwarebazaar]
 min_sources_for_safe: 2
 min_high_weight_for_safe: 1     # SAFE needs this many successful high-weight sources
-listing_feeds: [threatfox, urlhaus, malwarebazaar]   # "no match" = absence of evidence: weight 0, not a strong source
-weights: {virustotal: 3, threatfox: 3, urlhaus: 3, malwarebazaar: 3, abuseipdb: 2, hybrid: 2}
+listing_feeds: [threatfox, urlhaus, malwarebazaar, localfeeds]   # "no match" = absence of evidence: weight 0, not a strong source
+weights: {virustotal: 3, threatfox: 3, urlhaus: 3, malwarebazaar: 3, abuseipdb: 2, hybrid: 2, hashlookup: 2, localfeeds: 3}
 default_weight: 1
 confidence_high: 5              # agreeing weight >= 5 -> high
 confidence_medium: 3            # >= 3 -> medium, below -> low
@@ -460,3 +464,23 @@ Each milestone ends with tests passing and an acceptance check.
 - VirusTotal public API and Shodan InternetDB terms forbid commercial products. Check before using verdikt at work.
 - Free-tier limits for urlscan, OTX, Pulsedive and abuse.ch are not published. Read them from response headers at runtime.
 - abuse.ch added v2 URL paths in 2026. Check their changelog before writing those clients.
+
+---
+
+## 19. Additions after M9
+
+Built in one pass at the user's request; each item is covered by tests and, for the UI, by Playwright.
+
+| Area | What | Notes |
+|---|---|---|
+| Sources | `localfeeds` (Feodo, Spamhaus DROP, Tor exits, Tranco top 100k) and `hashlookup` (CIRCL) | Local data is downloaded by `verdikt feeds update`; lookups need no quota. Tranco matches exactly |
+| Context | CISA KEV and EPSS for the CVEs InternetDB reports | `Report.cves`, informational only |
+| Model | `Report.confidence`, `seen_before`, `cves`; `schema_version` 3 | Confidence from `rules.yaml` weights; never changes the level |
+| Data | Cache pruning and retention, source statistics, watchlist, analyst feedback, audit log | `VERDIKT_REPORT_RETENTION_DAYS`, `VERDIKT_AUDIT_LOG`, `VERDIKT_FEEDS_DIR` |
+| CLI | `feeds update/status`, `watch add/list/remove/run`, `extract`, `bulk --text --csv --resume`, `check --stix` | Scheduling is left to cron or Task Scheduler |
+| API | `/api/stats`, `/api/watchlist` (+ recheck), `/api/feeds` (+ update), `/api/extract`, `/api/reports/{id}/stix`, feedback | All token-gated, JSON-only POST (send `{}` for an empty body) |
+| UI | Overview, Batch, Vulnerabilities, Seen before, feedback, Watch, STIX export | Plain Tailwind components; activity chart is inline SVG with a data table |
+| Tests | Playwright end to end against `scripts/e2e_server.py` | Fake sources, in-memory database, no network; runs in CI |
+
+Not built (ideas): MISP/OpenCTI import or push, saved investigations and notes, a built-in scheduler, per-result urlscan verdicts (needs a key), passive DNS and WHOIS/RDAP domain age.
+

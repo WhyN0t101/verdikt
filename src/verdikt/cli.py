@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import csv as _csv
 import json as _json
 import os
 import secrets
@@ -10,6 +11,7 @@ import sys
 import threading
 import webbrowser
 from collections.abc import Awaitable, Callable
+from datetime import timedelta
 from pathlib import Path
 from typing import Annotated
 
@@ -20,15 +22,22 @@ from rich.markup import escape
 from rich.table import Table
 
 from verdikt.config import Settings, get_settings
-from verdikt.detect import DetectError
+from verdikt.detect import DetectError, detect
 from verdikt.engine import Engine, build_engine
+from verdikt.extract import MAX_ITEMS, extract_iocs
 from verdikt.models import Level, Report, Status
 from verdikt.notify import Platform, notify
+from verdikt.sources.feeds import DEFAULT_TOP, FeedResult, feeds_status, update_feeds
 from verdikt.stix import to_stix
+from verdikt.watch import WatchChange, recheck
 
 app = typer.Typer(add_completion=False, no_args_is_help=True, help="IOC triage.")
 cache_app = typer.Typer(help="Cache maintenance.")
 app.add_typer(cache_app, name="cache")
+watch_app = typer.Typer(help="Watchlist: re-check indicators and report verdict changes.")
+app.add_typer(watch_app, name="watch")
+feeds_app = typer.Typer(help="Local data feeds: blocklists, Tor exits, top sites, KEV, EPSS.")
+app.add_typer(feeds_app, name="feeds")
 
 out = Console()
 err = Console(stderr=True)
@@ -168,28 +177,87 @@ def _read_iocs(path: Path) -> list[str]:
     return [ln.strip() for ln in lines if ln.strip() and not ln.strip().startswith("#")]
 
 
+CSV_FIELDS = ("ioc", "type", "level", "confidence", "agreeing", "total", "report_id", "reasons")
+
+
+def csv_row(report: Report) -> list[str]:
+    # a spreadsheet runs cells that start with = + - @ as formulas; indicators and feed text
+    # are attacker-controlled, so neutralise them
+    def safe(text: str) -> str:
+        return "'" + text if text[:1] in ("=", "+", "-", "@", "\t", "\r") else text
+
+    return [
+        safe(report.ioc),
+        report.ioc_type.value,
+        report.level.value,
+        report.confidence.value,
+        str(report.agreeing),
+        str(report.total),
+        report.id,
+        safe(" | ".join(report.reasons)),
+    ]
+
+
+@app.command()
+def extract(
+    source: Annotated[str, typer.Argument(help="Text file, or - for stdin")] = "-",
+) -> None:
+    """List every indicator found in free text (a ticket, an email). Nothing is looked up."""
+    text = sys.stdin.read() if source == "-" else Path(source).read_text(encoding="utf-8")
+    found = extract_iocs(text, get_settings().internal_domain_list)
+    for item in found.items:
+        sys.stdout.write(f"{item.type.value}\t{item.value}\n")
+    for s in found.skipped:
+        err.print(f"skipped {s.value}: {s.reason}", markup=False)
+    if found.truncated:
+        err.print(f"only the first {MAX_ITEMS} indicators are listed", markup=False)
+
+
 @app.command()
 def bulk(
     file: Annotated[Path, typer.Argument(exists=True, dir_okay=False, readable=True)],
     json: Annotated[bool, typer.Option("--json", help="One JSON report per line")] = False,
+    csv_out: Annotated[bool, typer.Option("--csv", help="One CSV row per indicator")] = False,
+    text: Annotated[
+        bool, typer.Option("--text", help="The file is free text: extract the indicators first")
+    ] = False,
+    resume: Annotated[
+        bool, typer.Option("--resume", help="Skip indicators already checked in the last 24 h")
+    ] = False,
     notify_to: Annotated[Platform | None, typer.Option("--notify")] = None,
     min_level: Annotated[Level, typer.Option("--min-level")] = Level.SUSPICIOUS,
 ) -> None:
-    """Check one IOC per line. Sequential, so the limiters and daily budgets are respected."""
+    """Check many IOCs. Sequential, so the limiters and daily budgets are respected."""
     settings = get_settings()
-    iocs = _read_iocs(file)
+    if text:
+        found = extract_iocs(file.read_text(encoding="utf-8"), settings.internal_domain_list)
+        iocs = [i.value for i in found.items]
+        for s in found.skipped:
+            err.print(f"skipped {s.value}: {s.reason}", markup=False)
+    else:
+        iocs = _read_iocs(file)
+    writer = _csv.writer(sys.stdout, lineterminator="\n") if csv_out else None
+    if writer:
+        writer.writerow(CSV_FIELDS)
 
     async def run(engine: Engine, http: httpx.AsyncClient) -> tuple[list[int], int]:
         codes: list[int] = []
         failures = 0
+        done: set[str] = engine.cache.checked_since(timedelta(hours=24)) if resume else set()
         for line in iocs:
             try:
+                if resume and detect(line, settings.internal_domain_list).value in done:
+                    err.print(f"resume: skipping {line} (checked in the last 24 h)", markup=False)
+                    continue
                 report = await engine.check(line)
             except DetectError as exc:
                 failures += 1
                 err.print(f"skip {line!r}: {exc}", markup=False)
                 continue
-            _emit(report, json, raw=False)
+            if writer:
+                writer.writerow(csv_row(report))
+            else:
+                _emit(report, json, raw=False)
             if _all_failed(report):
                 failures += 1
             codes.append(exit_code(report.level))
@@ -215,11 +283,122 @@ def sources() -> None:
             table.add_column(col)
         for s in engine.source_status():
             quota = f"{s.used_today}/{s.daily_budget}" if s.daily_budget else str(s.used_today)
-            enabled = "yes" if s.enabled else "no (key missing)"
+            off = "no (key missing)" if s.requires_key else "no (run `verdikt feeds update`)"
+            enabled = "yes" if s.enabled else off
             table.add_row(s.name, enabled, ",".join(s.supports), quota)
         out.print(table)
 
     asyncio.run(_with_engine(settings, run))
+
+
+@feeds_app.command("update")
+def feeds_update(
+    top: Annotated[int, typer.Option(help="Tranco top sites to keep")] = DEFAULT_TOP,
+) -> None:
+    """Download the feeds (about 14 MB). Lookups then run locally with no quota."""
+    directory = get_settings().resolved_feeds_dir
+
+    async def run() -> list[FeedResult]:
+        async with httpx.AsyncClient() as http:
+            return await update_feeds(http, directory, top)
+
+    results = asyncio.run(run())
+    table = Table(show_header=True, header_style="bold")
+    for col in ("feed", "result", "entries"):
+        table.add_column(col)
+    for r in results:
+        table.add_row(r.name, r.detail, f"{r.count:,}" if r.ok else "-")
+    out.print(table)
+    if not any(r.ok for r in results):
+        raise typer.Exit(1)
+
+
+@feeds_app.command("status")
+def feeds_show() -> None:
+    """Show which feeds are downloaded and when."""
+    status = feeds_status(get_settings().resolved_feeds_dir)
+    if not status:
+        out.print("no feeds downloaded: run `verdikt feeds update`", markup=False)
+        return
+    for name, info in status.items():
+        out.print(
+            f"{name}: {info.get('count', 0):,} entries, fetched {info.get('fetched_at', '?')}",
+            markup=False,
+        )
+
+
+@watch_app.command("add")
+def watch_add(ioc: Annotated[str, typer.Argument(help="Indicator to watch")]) -> None:
+    """Add an indicator. Its first `watch run` sets the baseline verdict."""
+    settings = get_settings()
+
+    async def run(engine: Engine, http: httpx.AsyncClient) -> str:
+        parsed = detect(ioc, settings.internal_domain_list)
+        if not engine.cache.watch_add(parsed.value, parsed.type.value):
+            raise typer.Exit(1)
+        return parsed.value
+
+    try:
+        value = asyncio.run(_with_engine(settings, run))
+    except DetectError as exc:
+        err.print(f"error: {exc}", markup=False)
+        raise typer.Exit(1) from exc
+    out.print(f"watching {value}", markup=False)
+
+
+@watch_app.command("list")
+def watch_list() -> None:
+    """Show watched indicators and the latest verdict changes."""
+    settings = get_settings()
+
+    async def run(engine: Engine, http: httpx.AsyncClient) -> None:
+        table = Table(show_header=True, header_style="bold")
+        for col in ("indicator", "type", "last verdict", "last checked"):
+            table.add_column(col)
+        for e in engine.cache.watch_list():
+            table.add_row(e.ioc, e.ioc_type, e.last_level or "-", str(e.last_checked_at or "-"))
+        out.print(table)
+        for ev in engine.cache.watch_events(10):
+            out.print(
+                f"{ev.at:%Y-%m-%d %H:%M}  {ev.ioc}: {ev.from_level} -> {ev.to_level}", markup=False
+            )
+
+    asyncio.run(_with_engine(settings, run))
+
+
+@watch_app.command("remove")
+def watch_remove(ioc: Annotated[str, typer.Argument()]) -> None:
+    """Stop watching an indicator."""
+    settings = get_settings()
+
+    async def run(engine: Engine, http: httpx.AsyncClient) -> bool:
+        return engine.cache.watch_remove(ioc)
+
+    if not asyncio.run(_with_engine(settings, run)):
+        err.print("not on the watchlist", markup=False)
+        raise typer.Exit(1)
+
+
+@watch_app.command("run")
+def watch_run(
+    notify_to: Annotated[Platform | None, typer.Option("--notify")] = None,
+    min_level: Annotated[Level, typer.Option("--min-level")] = Level.SUSPICIOUS,
+) -> None:
+    """Re-check every entry (bypassing the cache) and print verdict changes. Schedule this."""
+    settings = get_settings()
+
+    async def run(engine: Engine, http: httpx.AsyncClient) -> list[WatchChange]:
+        changes, reports = await recheck(engine)
+        if notify_to:
+            for report in reports:
+                await _notify(report, [notify_to], settings, http, min_level)
+        return changes
+
+    changes = asyncio.run(_with_engine(settings, run))
+    for c in changes:
+        out.print(f"{c.ioc}: {c.before} -> {c.after}", markup=False)
+    if not changes:
+        out.print("no changes", markup=False)
 
 
 @cache_app.command("clear")

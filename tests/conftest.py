@@ -65,7 +65,7 @@ class Fake(BaseSource):
     ) -> None:
         super().__init__("key")
         self.name = name
-        self._metrics = metrics or {}
+        self.metrics = metrics or {}
         self._status = status
         self._raises = raises
         self.calls = 0
@@ -74,7 +74,7 @@ class Fake(BaseSource):
         self.calls += 1
         if self._raises:
             raise RuntimeError("boom")
-        return self.result(self._status, "fake", metrics=self._metrics, raw={"fake": True})
+        return self.result(self._status, "fake", metrics=self.metrics, raw={"fake": True})
 
     async def query(self, ioc: IOC, http: Gate) -> SourceResult:
         # raise through on purpose: the engine must survive a misbehaving source
@@ -99,8 +99,13 @@ def sleeps() -> Sleeps:
 
 
 @pytest.fixture
-def settings() -> Settings:
-    return Settings(_env_file=None, internal_domains="corp.example.com")  # pyright: ignore[reportCallIssue]
+def settings(tmp_path: Path) -> Settings:
+    # an empty feeds dir keeps tests independent of feeds downloaded on this machine
+    return Settings(
+        _env_file=None,  # pyright: ignore[reportCallIssue]
+        internal_domains="corp.example.com",
+        feeds_dir=tmp_path / "feeds",
+    )
 
 
 @pytest.fixture

@@ -23,6 +23,8 @@ The core is a Python library that returns a single `Report` model. The CLI, the 
 - [How the verdict is decided](#how-the-verdict-is-decided)
 - [Input handling and privacy](#input-handling-and-privacy)
 - [Notifications](#notifications)
+- [Local feeds, known-good lists and CVE context](#local-feeds-known-good-lists-and-cve-context)
+- [Dashboard, watchlist and batch](#dashboard-watchlist-and-batch)
 - [Audit log and SIEM](#audit-log-and-siem)
 - [STIX export](#stix-export)
 - [Caching, rate limits and daily budgets](#caching-rate-limits-and-daily-budgets)
@@ -48,7 +50,7 @@ uv run verdikt ui                    # http://127.0.0.1:8765
 
 A source whose key is missing is disabled; verdikt never fails because of it. These sources work with no key at all: Shodan InternetDB (IP only), urlscan.io search, AlienVault OTX and GreyNoise Community (IP only).
 
-Without keys you can still look up IPs and domains, but the verdict will usually be `unknown` (exit code 12). InternetDB and GreyNoise only add context, and the sources that decide most verdicts (VirusTotal, abuse.ch, AbuseIPDB) need keys. A `malicious` verdict needs at least one of those. Run `uv run verdikt sources` to see what is enabled.
+Without keys you can still look up IPs and domains, but the verdict will usually be `unknown` (exit code 12). InternetDB and GreyNoise only add context, and the sources that decide most verdicts (VirusTotal, abuse.ch, AbuseIPDB) need keys. A `malicious` verdict needs at least one of those. Run `uv run verdikt sources` to see what is enabled. `uv run verdikt feeds update` adds the local blocklists and known-good lists, which need no key.
 
 ## Configuration
 
@@ -72,6 +74,7 @@ Secrets and paths come from `.env` in the working directory (copy `.env.example`
 | `VERDIKT_DNS_RESOLVE` | `true` enables DNS resolution of domains (default `false`, see [privacy](#input-handling-and-privacy)) |
 | `VERDIKT_REPORT_RETENTION_DAYS` | Stored reports older than this many days are deleted at startup (default `90`; `0` keeps them forever). Expired cache rows and old budget rows are always deleted. Analyst feedback is kept |
 | `VERDIKT_AUDIT_LOG` | Path of the JSON-lines audit log. Default: `audit.jsonl` in the user data directory |
+| `VERDIKT_FEEDS_DIR` | Folder for the downloaded feeds (blocklists, Tor exits, Tranco, KEV, EPSS). Default: `feeds` in the user data directory |
 | `VERDIKT_SESSION_TOKEN` | Fixed API token for `verdikt ui`, for automation that calls a long-running instance. Unset: a random token per run |
 
 `.env` is git-ignored. Keys are never logged, never returned by the API and never placed in URLs, with one unavoidable exception: Telegram requires the bot token in the request path.
@@ -85,6 +88,10 @@ uv run verdikt check <ioc> [--json] [--stix] [--raw] [--no-cache] [--notify slac
 uv run verdikt bulk <file> [--json] [--notify slack|telegram] [--min-level suspicious]
 uv run verdikt sources
 uv run verdikt cache clear [--source NAME]
+uv run verdikt feeds update | status        # download or inspect the local feeds
+uv run verdikt watch add|list|remove|run     # watchlist and re-checks
+uv run verdikt extract <file|->              # list the indicators in free text
+uv run verdikt bulk <file> [--text] [--csv] [--resume]
 uv run verdikt ui [--port 8765] [--no-open] [--dev]
 ```
 
@@ -125,6 +132,9 @@ Input may be defanged (`hxxp://evil[.]com`, `1[.]2[.]3[.]4`); it is refanged fir
 - **Map tab (key `1`):** a dot-matrix world map drawn from a bundled data file, so it makes no map requests. The indicator and related IPs are markers; arcs join the indicator to related infrastructure. Locations are approximate. Click a related marker to check that IP. It needs the GeoLite2 databases.
 - **Graph tab (key `2`):** indicators and related infrastructure (IPs, domains, URLs, hashes, malware families, ASNs) with labelled edges. Select a node and choose "Check this IOC" to pivot; each pivot spends source quota and the panel shows what is left.
 - **Raw JSON tab (key `3`):** the full stored report including vendor raw responses, as text.
+- **Overview page:** activity, source health, watchlist, recurring infrastructure, feedback and feeds (see below).
+- **Batch page:** paste text, extract the indicators, check them all, export CSV.
+- **Vulnerabilities:** CVEs found on a host with KEV and EPSS context.
 - **Theme:** dark by default, light follows the system setting or the toggle in the top bar.
 
 Feed data is attacker-controlled and is always rendered as text, never as HTML.
@@ -161,6 +171,26 @@ verdikt takes care not to leak what you investigate.
 ## Notifications
 
 `--notify slack` or `--notify telegram` posts the result when its level is at or above `--min-level` (default `suspicious`). The order is SAFE, UNKNOWN, SUSPICIOUS, MALICIOUS. The message has a level icon, the defanged indicator and type, one line per source that hit, and a link to the VirusTotal or urlscan page. Feed-derived text is escaped before sending (HTML escaping for Telegram, `&`, `<`, `>` for Slack). A failed send is reported in the CLI output, never silently dropped, and never includes the webhook URL or token.
+
+## Local feeds, known-good lists and CVE context
+
+`uv run verdikt feeds update` downloads public data files once (about 14 MB, under 5 seconds) into the feeds folder (`VERDIKT_FEEDS_DIR`, default `feeds` in the user data directory). Lookups then run on your machine: no quota, and the indicator never leaves.
+
+| Feed | Used for |
+|---|---|
+| Feodo Tracker botnet C2 IPs and Spamhaus DROP networks | An IP on either list is **malicious** (source `localfeeds`) |
+| Tor exit node list | Tags an IP as a Tor exit; context only |
+| Tranco top 100,000 sites | An **exact** match of a domain softens a suspicious verdict to safe. `sub.example.com` does not inherit `example.com`, and a top site can never clear a malicious verdict |
+| CISA Known Exploited Vulnerabilities and EPSS scores | CVEs that InternetDB reports for a host are shown with a KEV badge and an exploit probability. Context only: a vulnerable host is not a malicious one |
+
+CIRCL hashlookup (an API, no key) answers whether a file hash is in known-file sets. A hit flagged `KnownMalicious` counts as suspicious; a hit without that flag only softens a suspicious verdict. Without downloaded feeds the `localfeeds` source is disabled and everything else works as before. Re-run the update whenever you want fresher lists, or use "Update feeds" on the Overview page.
+
+## Dashboard, watchlist and batch
+
+The **Overview** page shows checks per day by verdict, source health (answer rate, errors, rate limits, cache hits, average latency over live calls), recurring infrastructure from the "seen before" index, verdict feedback counts, the watchlist and the status of the local feeds.
+
+- **Watchlist:** choose "Watch" on a report (or `verdikt watch add <ioc>`). "Re-check all" and `verdikt watch run` check every entry again **without the cache**, so they spend source quota, record any verdict change, and with `--notify` send the changed ones to Slack or Telegram. There is no built-in scheduler: run `verdikt watch run` from cron or Task Scheduler. The list is capped at 50 entries.
+- **Batch:** paste a ticket, an email or a list on the **Batch** page. Indicators are found (defanged ones too), normalized and deduplicated; internal targets are listed as skipped and never looked up. "Check all" runs them one at a time and the table can be exported as CSV. The same from the shell: `verdikt extract ticket.txt` lists the indicators, and `verdikt bulk ticket.txt --text --csv > results.csv` checks them (`--resume` skips anything checked in the last 24 hours). CSV cells that start with `=`, `+`, `-` or `@` get a leading apostrophe so a spreadsheet cannot run them as formulas.
 
 ## Audit log and SIEM
 
@@ -215,6 +245,11 @@ src/verdikt/
   notify/          Slack and Telegram
   api/app.py       FastAPI routes, security checks, static SPA
   cli.py           command line
+  extract.py       indicators from free text (ioc-finder + detect)
+  watch.py         watchlist re-checks
+  audit.py         JSON-lines audit log
+  stix.py          STIX 2.1 export
+  sources/feeds.py local feeds: download, parse, lookup
 web/               React single-page app (Vite, Tailwind, TanStack Query, Cytoscape)
 integrations/      Cortex analyzer and Shuffle app definition
 scripts/           dump_openapi.py
@@ -233,6 +268,8 @@ docs/              design notes and reference documents
 | Map shows "No location" | Set `VERDIKT_GEOIP_DIR` to a folder with the two GeoLite2 `.mmdb` files, and use an IP indicator. |
 | A source shows `rate limited` | Its per-minute limit or daily budget is used up, or the service asked for a long wait. Re-run later; the answer was not cached. |
 | `refusing internal ...` | The target is private or matches your internal domains. This is deliberate. |
+| `localfeeds` shows "run `verdikt feeds update`" | The feeds have not been downloaded yet. Run it once (about 14 MB). |
+| A POST to the API returns 415 | The API only accepts `Content-Type: application/json`; send `{}` for an empty POST. |
 | `uv` not found | Use `python -m uv`, or add the install directory to your PATH. |
 | API returns 401 or 421 | Missing session token or a `Host` other than `127.0.0.1:<port>` or `localhost:<port>`. See `docs/API.md`. |
 

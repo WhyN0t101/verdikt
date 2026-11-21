@@ -164,6 +164,20 @@ wheels = [
 ]
 
 [[package]]
+name = "ioc-finder"
+version = "9.4.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "ioc-fanger" },
+    { name = "pyparsing" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/74/a7/7e6b34b94a5ac4dd4a7e67a46cf956097b96d67b0941388cf38b2f03d642/ioc_finder-9.4.1.tar.gz", hash = "sha256:e16f09b4d5aa5f0cca97ecb4139a6e17ac433336856f194a1b762f979077c0ea", size = 193690, upload-time = "2026-06-17T10:56:29.624Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5d/32/e0e61a001134dfba73438e2c95e7879e2a78a4cd7bad391d92223965f204/ioc_finder-9.4.1-py3-none-any.whl", hash = "sha256:d7f4ebb76b450f22f5ee26eea6e8d4ffbda972b3c82d7efa1a9ca74294703e37", size = 52304, upload-time = "2026-06-17T10:56:28.256Z" },
+]
+
+[[package]]
 name = "markdown-it-py"
 version = "4.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -457,6 +471,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pyparsing"
+version = "3.3.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/e4/11/b213bebff182584360cb8d17c72c1677fec5c5c228de439e63bcf8ab1c8f/pyparsing-3.3.3.tar.gz", hash = "sha256:928ae7e20211f3b6f3915a72f06a0cfd29ab9d24279dd6346b6b1a7146397d36", size = 1050487, upload-time = "2026-09-20T20:59:05.609Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/38/bb/d215ee7c73b61497b28a5503f9f53523f294fcc936762b7caf90e0c1c2b5/pyparsing-3.3.3-py3-none-any.whl", hash = "sha256:ece8c00a69cf01b45d0b1dedabb469c90d8caf996d4fda40f147627a122849a4", size = 126420, upload-time = "2026-09-20T20:59:04.025Z" },
+]
+
+[[package]]
 name = "pyright"
 version = "1.1.414"
 source = { registry = "https://pypi.org/simple" }
@@ -703,6 +726,7 @@ dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
     { name = "ioc-fanger" },
+    { name = "ioc-finder" },
     { name = "maxminddb" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
@@ -730,6 +754,7 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.111" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "ioc-fanger", specifier = ">=2.0" },
+    { name = "ioc-finder", specifier = ">=9.4.1" },
     { name = "maxminddb", specifier = ">=2.6" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pydantic-settings", specifier = ">=2.3" },
