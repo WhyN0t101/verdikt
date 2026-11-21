@@ -87,6 +87,11 @@ export function GraphView({ graph, rootId, theme, sources, pending, onPivot }: P
       minZoom: 0.4,
       maxZoom: 3,
     });
+    // a 3-node graph would otherwise fill the viewport at max zoom
+    if (cy.zoom() > 1.2) {
+      cy.zoom(1.2);
+      cy.center();
+    }
     cy.on("tap", "node", (evt) => {
       const id = evt.target.id() as string;
       setSelected(graph.nodes.find((n) => n.id === id) ?? null);

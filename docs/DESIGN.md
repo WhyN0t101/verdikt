@@ -77,7 +77,8 @@ What it shows: dark "mission control" app. Top bar with breadcrumb (`Nexus Core 
   | INFO (rows only) | `--violet-300` |
 
   Level is always text + icon too, never colour alone.
-- **Type:** geometric sans for UI and wordmark (Geist or Inter); mono for IOCs, labels, logs, numbers (Geist Mono or JetBrains Mono). Labels: uppercase, 11–12 px, letter-spacing ~0.08em.
+- **Type:** Familjen Grotesk for UI and wordmark; Martian Mono for IOCs, labels, logs, numbers (both via `@fontsource-variable`, OFL).
+- **Surfaces:** flat neutral black and white, no tinted panels or gradients; violet only as the accent. Labels: uppercase, 11–12 px, letter-spacing ~0.08em.
 - **Density:** compact like the layout reference; hairline dividers, no heavy cards or shadows.
 - **Motion:** pixel-dissolve on results, reticle pulse on the active IOC, streaming log lines. All disabled under `prefers-reduced-motion`.
 

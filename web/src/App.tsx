@@ -4,6 +4,8 @@ import { api } from "./api";
 import { CommandBar } from "./components/CommandBar";
 import { EmptyState } from "./components/EmptyState";
 import { HistoryList } from "./components/HistoryList";
+import { LevelBadge } from "./components/LevelBadge";
+import { Logo } from "./components/Logo";
 import { LogStream } from "./components/LogStream";
 import { MapView } from "./components/MapView";
 import { RawJson } from "./components/RawJson";
@@ -33,6 +35,15 @@ function initialTheme(): Theme {
     /* storage can be blocked; fall through */
   }
   return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+}
+
+function Readout({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="leading-none">
+      <div className="text-[11px] text-muted">{label}</div>
+      <div className="mono mt-1.5 text-[13px] font-medium">{value}</div>
+    </div>
+  );
 }
 
 export default function App() {
@@ -117,37 +128,35 @@ export default function App() {
 
   return (
     <div className="relative flex min-h-full flex-col lg:h-full">
-      <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-panel px-4 py-2.5">
-        <div className="flex items-center gap-2">
-          <svg aria-hidden="true" viewBox="0 0 32 32" className="h-7 w-7">
-            <rect width="32" height="32" rx="7" fill="var(--violet-600)" />
-            <path d="M8.5 10l7.5 13 7.5-13" stroke="#fff" strokeWidth="3.4" fill="none" strokeLinejoin="miter" />
-            <path d="M3.5 10h6M22.5 10h6" stroke="#fff" strokeWidth="1.6" />
-          </svg>
-          <span className="text-lg font-bold tracking-tight">verdikt</span>
-        </div>
+      <header className="flex flex-wrap items-center gap-x-5 gap-y-3 border-b border-line bg-panel px-5 py-3">
+        <Logo />
         <CommandBar ref={input} value={value} pending={check.isPending} onChange={setValue} onSubmit={() => check.mutate(value)} />
-        <div className="mono flex items-center gap-3 text-xs text-muted">
-          {report && <span title="Last lookup">{formatDuration(report.duration_ms)}</span>}
-          {vt && (
-            <span title="VirusTotal requests used today">
-              VT {formatQuota(vt.used_today, vt.daily_budget)}
-            </span>
-          )}
+        <div className="ml-auto flex items-center gap-4 sm:ml-0">
+          {report && <Readout label="Last check" value={formatDuration(report.duration_ms)} />}
+          {vt && <Readout label="VirusTotal" value={formatQuota(vt.used_today, vt.daily_budget)} />}
           <button
             type="button"
-            className="rounded border border-line px-2 py-1 hover:border-accent"
+            className="grid h-9 w-9 place-items-center rounded-lg border border-line-strong text-muted transition-colors hover:border-accent hover:text-ink"
             onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
             aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
           >
-            {theme === "dark" ? "Light" : "Dark"}
+            <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
+              {theme === "dark" ? (
+                <>
+                  <circle cx="10" cy="10" r="3.5" />
+                  <path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4" />
+                </>
+              ) : (
+                <path d="M16.5 11.5A6.5 6.5 0 0 1 8.5 3.5a6.5 6.5 0 1 0 8 8z" />
+              )}
+            </svg>
           </button>
         </div>
       </header>
 
 
       <div className="grid min-h-0 flex-1 lg:grid-cols-[14rem_minmax(0,1fr)] xl:grid-cols-[14rem_minmax(0,1fr)_20rem]">
-        <aside className="border-b border-line bg-panel py-2 lg:overflow-y-auto lg:border-b-0 lg:border-r">
+        <aside className="order-3 border-t border-line bg-panel py-2 lg:order-none lg:overflow-y-auto lg:border-r lg:border-t-0">
           <h2 className="label px-4 pb-2 pt-1">History</h2>
           <HistoryList items={history.data ?? []} activeId={report?.id ?? null} onSelect={(id) => void open(id)} />
         </aside>
@@ -199,9 +208,16 @@ export default function App() {
 
             {showReport && (
               <>
-                <div className="absolute left-4 top-4 z-10 w-[calc(100%-2rem)] max-w-md">
-                  <VerdictHud report={report} />
-                </div>
+                {tab === "map" ? (
+                  <div className="absolute bottom-4 left-4 z-10 w-[calc(100%-2rem)] max-w-md">
+                    <VerdictHud report={report} />
+                  </div>
+                ) : (
+                  <section aria-label="Verdict" className="hud absolute left-4 top-14 z-10 flex items-center gap-3 px-3 py-2 sm:top-4">
+                    <LevelBadge level={report.level} />
+                    <span className="mono text-xs">{report.ioc}</span>
+                  </section>
+                )}
                 <div role="tablist" className="hud absolute right-4 top-4 z-10 flex">
                   {TABS.map((t) => (
                     <button
@@ -217,7 +233,7 @@ export default function App() {
                   ))}
                 </div>
                 {tab === "map" && (
-                  <p className="mono absolute bottom-4 left-4 z-10 max-w-sm text-xs text-muted">
+                  <p className="mono absolute left-4 top-14 z-10 max-w-sm text-xs text-muted sm:top-4">
                     {report.geo.length === 0
                       ? "No location for this indicator. Locations need an IP and the GeoLite2 databases (set VERDIKT_GEOIP_DIR in .env)."
                       : "Locations are approximate: cloud, CDN and VPN addresses resolve to the provider's registered location, not the operator's."}
@@ -234,7 +250,7 @@ export default function App() {
           )}
         </main>
 
-        <div className="border-t border-line bg-panel lg:col-span-2 lg:overflow-y-auto xl:col-span-1 xl:border-l xl:border-t-0">
+        <div className="order-2 border-t border-line bg-panel lg:order-none lg:col-span-2 lg:overflow-y-auto xl:col-span-1 xl:border-l xl:border-t-0">
           <Diagnostics report={showReport ? report : null} />
           <Waterfall report={showReport ? report : null} />
           <LogStream report={check.isPending ? null : report} />

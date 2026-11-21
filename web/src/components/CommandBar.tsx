@@ -13,7 +13,7 @@ export const CommandBar = forwardRef<HTMLInputElement, Props>(function CommandBa
 ) {
   return (
     <form
-      className="flex min-w-0 flex-1 items-center gap-2"
+      className="order-last flex min-w-0 basis-full items-center gap-2 sm:order-none sm:basis-0 sm:flex-1"
       onSubmit={(e) => {
         e.preventDefault();
         if (value.trim() && !pending) onSubmit();
@@ -22,8 +22,11 @@ export const CommandBar = forwardRef<HTMLInputElement, Props>(function CommandBa
       <label htmlFor="ioc" className="sr-only">
         IP, domain, URL or hash
       </label>
-      <div className="flex min-w-0 flex-1 items-center gap-2 rounded-md border border-line-strong bg-panel px-3 focus-within:border-accent">
-        <kbd className="label hidden shrink-0 rounded border border-line px-1 py-0.5 sm:block">Ctrl K</kbd>
+      <div className="flex h-11 min-w-0 flex-1 items-center gap-2.5 rounded-lg border border-line-strong bg-bg px-3.5 transition-colors focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/30">
+        <svg aria-hidden="true" viewBox="0 0 20 20" className="h-4 w-4 shrink-0 text-muted" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <circle cx="8.5" cy="8.5" r="5.5" />
+          <path d="M13 13l4 4" strokeLinecap="round" />
+        </svg>
         <input
           id="ioc"
           ref={ref}
@@ -32,13 +35,14 @@ export const CommandBar = forwardRef<HTMLInputElement, Props>(function CommandBa
           placeholder="Paste an IP, domain, URL or hash"
           spellCheck={false}
           autoComplete="off"
-          className="mono h-10 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted"
+          className="mono h-full min-w-0 flex-1 bg-transparent text-[13px] outline-none placeholder:text-muted"
         />
+        <kbd className="mono hidden shrink-0 rounded-md border border-line-strong px-1.5 py-0.5 text-[10px] leading-none text-muted shadow-[0_1px_0_var(--border-strong)] sm:block">Ctrl K</kbd>
       </div>
       <button
         type="submit"
         disabled={pending || !value.trim()}
-        className="h-10 shrink-0 rounded-md bg-accent px-4 text-sm font-medium text-on-accent disabled:opacity-50"
+        className="h-11 shrink-0 rounded-lg bg-accent px-5text-sm font-semibold text-on-accent shadow-[inset_0_1px_0_rgb(255_255_255/0.22),0_1px_2px_rgb(0_0_0/0.35)] transition hover:brightness-110 active:translate-y-px disabled:cursor-not-allowed disabled:bg-panel2 disabled:text-muted disabled:shadow-[inset_0_0_0_1px_var(--border)]"
       >
         {pending ? "Checking…" : "Check"}
       </button>
