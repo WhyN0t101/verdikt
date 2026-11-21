@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import html
 import mimetypes
 import os
@@ -360,6 +361,14 @@ def create_app(
         sched: Scheduler = request.app.state.scheduler
         return await sched.run(name)
 
+    @app.post("/api/scheduler/{name}/start", response_model=JobStatus)
+    async def scheduler_start(name: str, request: Request) -> JobStatus:
+        """Start a job in the background and return at once; poll GET /api/scheduler."""
+        if name not in JOBS:
+            raise HTTPException(status_code=404, detail="no such job")
+        sched: Scheduler = request.app.state.scheduler
+        return sched.run_in_background(name)
+
     @app.get("/api/stats", response_model=Stats)
     async def stats(engine: EngineDep, days: Annotated[int, Query(ge=1, le=90)] = 30) -> Stats:
         return engine.cache.stats(days)
@@ -405,8 +414,11 @@ def create_app(
     async def feeds_import(body: FeedImportRequest, engine: EngineDep) -> FeedImport:
         directory = engine.settings.resolved_feeds_dir
         try:
-            fmt, entries = parse_any(body.content.encode("utf-8"), body.all_attributes)
-            count = write_import(directory, body.name, fmt, entries)
+            # parsing 100k indicators is CPU work: keep it off the event loop
+            fmt, entries = await asyncio.to_thread(
+                parse_any, body.content.encode("utf-8"), body.all_attributes
+            )
+            count = await asyncio.to_thread(write_import, directory, body.name, fmt, entries)
         except ImportError_ as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         register_import(directory, body.name, count)
@@ -414,7 +426,7 @@ def create_app(
 
     @app.delete("/api/feeds/import", response_model=list[FeedInfo])
     async def feeds_forget(name: str, engine: EngineDep) -> list[FeedInfo]:
-        if not NAME.match(name):
+        if not NAME.fullmatch(name):
             raise HTTPException(status_code=422, detail="invalid list name")
         forget_import(engine.settings.resolved_feeds_dir, name)
         return await feeds_info(engine)

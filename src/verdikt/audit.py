@@ -20,8 +20,10 @@ from verdikt.notify.format import defang
 log = logging.getLogger(__name__)
 
 
+MAX_BYTES = 10 * 1024 * 1024  # past this the log moves to `<name>.1` (one generation kept)
+
+
 class AuditLog:
-    # shortcut: no rotation or size cap, so rotate it externally (logrotate) when it grows
     def __init__(self, path: Path) -> None:
         self._path = path
         self._lock = threading.Lock()
@@ -31,6 +33,8 @@ class AuditLog:
         try:
             with self._lock:
                 self._path.parent.mkdir(parents=True, exist_ok=True)
+                if self._path.exists() and self._path.stat().st_size >= MAX_BYTES:
+                    self._path.replace(self._path.with_name(self._path.name + ".1"))
                 with self._path.open("a", encoding="utf-8") as fh:
                     fh.write(line + "\n")
         except OSError as exc:  # an unwritable log must not fail a check, but must be visible

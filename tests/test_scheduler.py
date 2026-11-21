@@ -110,7 +110,7 @@ async def test_a_failing_job_is_recorded_not_raised(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    async def boom(_engine: Engine) -> None:
+    async def boom(_engine: Engine, _progress: object = None) -> None:
         raise RuntimeError("secret detail that must not be logged")
 
     monkeypatch.setattr(sched_mod, "recheck", boom)

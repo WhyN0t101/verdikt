@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import re
 from collections.abc import Callable
 
 from verdikt.models import Level, Report, SourceResult, Status
@@ -28,9 +29,16 @@ def defang(value: str) -> str:
     return out
 
 
+# a URL, a dotted name ending in letters, or an IPv4: the tokens that could become live links
+_LINKISH = re.compile(r"^[a-z][a-z0-9+.-]*://|[\w-]+\.[a-z]{2,}|^\d{1,3}(\.\d{1,3}){3}", re.I)
+
+
 def _feed_text(text: str) -> str:
-    """Feed-derived text: one line (no faked extra rows) and defanged (no live links)."""
-    return defang(" ".join(text.split()))
+    """Feed-derived text: one line (no faked extra rows), link-like tokens defanged.
+
+    Plain numbers such as `1.5` stay readable; only tokens that could auto-link are defanged.
+    """
+    return " ".join(defang(t) if _LINKISH.search(t) else t for t in text.split())
 
 
 def _hit_line(row: SourceResult, escape: Callable[[str], str]) -> str:
@@ -43,7 +51,9 @@ def escape_telegram(text: str) -> str:
 
 
 def escape_slack(text: str) -> str:
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    # `*`, `~` and backticks would let feed text restyle the message
+    text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return text.replace("`", "'").replace("*", "").replace("~", "")
 
 
 def hit_rows(report: Report) -> list[SourceResult]:
@@ -65,6 +75,16 @@ def _link(report: Report) -> str | None:
 
 def _header(report: Report) -> tuple[str, str]:
     return f"{EMOJI[report.level]} {report.level.value.upper()}", defang(report.ioc)
+
+
+def plain_message(report: Report) -> str:
+    """Markup-free text for email, Teams and Discord. Feed text is defanged and single-line."""
+    head, ioc = _header(report)
+    lines = [f"{head} {ioc} ({report.ioc_type.value})"]
+    lines += [_hit_line(r, lambda t: t) for r in hit_rows(report)]
+    if link := _link(report):
+        lines.append(f"Report: {link}")
+    return "\n".join(lines)
 
 
 def telegram_message(report: Report) -> str:

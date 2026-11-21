@@ -132,7 +132,7 @@ class Engine:
                 enabled=s.enabled,
                 requires_key=s.requires_key,
                 supports=sorted(t.value for t in s.supports),
-                used_today=self.cache.budget_used(s.name),
+                used_today=self.cache.budget_used(s.quota_group or s.name),
                 daily_budget=s.daily_budget,
             )
             for s in self.sources
@@ -171,7 +171,7 @@ class Engine:
             backoff=self._backoff,
         )
         result = await src.query(ioc, gate)
-        if result.status in (Status.OK, Status.NOT_FOUND):
+        if src.ttl > timedelta(0) and result.status in (Status.OK, Status.NOT_FOUND):
             self.cache.put(src.name, ioc.value, result)
         return result
 

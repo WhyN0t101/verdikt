@@ -113,7 +113,7 @@ def test_min_high_weight_is_configurable() -> None:
         (
             "override: conflicting evidence",
             [
-                row("virustotal", malicious=1),
+                row("virustotal", malicious=2),
                 row("abuseipdb", score=0),
                 row("greynoise", riot=True),
             ],
@@ -470,9 +470,9 @@ def test_rows_explain_themselves() -> None:
 
 
 def test_benign_override_is_recorded_on_the_row() -> None:
-    rows = [row("virustotal", malicious=1, suspicious=0), row("greynoise", riot=True)]
+    rows = [row("virustotal", malicious=2, suspicious=0), row("greynoise", riot=True)]
     vt_row, noise = decide(rows, RULES).results
-    assert vt_row.fired == ["malicious 1 >= 1 -> suspicious"]
+    assert vt_row.fired == ["malicious 2 >= 2 -> suspicious"]
     assert noise.fired == ["riot is true -> benign override (softens suspicious)"]
 
 

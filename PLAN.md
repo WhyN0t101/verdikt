@@ -497,3 +497,15 @@ Not built (ideas): MISP/OpenCTI import or push, saved investigations and notes, 
 
 Not built: a urlscan per-result verdict source (result pages are 13 to 40 MB each and verdicts cannot be searched on the free plan), live MISP/OpenCTI push, a separate `verdikt daemon`.
 
+
+### 19c. Review batch
+
+| Area | What | Notes |
+|---|---|---|
+| Verdict | `virustotal: {malicious: 2}` is suspicious (was 1) | One engine alone is usually a false positive; one `suspicious` engine still counts |
+| Watch | Re-checks run 4 at a time; a lookup that ended UNKNOWN because a source errored or was rate limited is not a verdict change | `POST /api/scheduler/{name}/start` runs a job in the background; `GET /api/scheduler` shows `running` and `progress` ("3/50") |
+| Scheduler | One lock per job (no double runs); `last_run` persists in the new `kv` table, so a restart keeps the cadence | An overdue job waits a full interval: starting the UI never spends quota |
+| Notify | Discord, Teams and email (stdlib `smtplib`); `VERDIKT_NOTIFY_COOLDOWN_HOURS`; `VERDIKT_WATCH_NOTIFY_ANY` | Discord sends `allowed_mentions: {parse: []}`; only link-like tokens are defanged; Slack markup characters in feed text are stripped |
+| Detect | NAT64 wrapping a private IPv4 is refused; `.intranet .private .home .localdomain` are internal; `fullmatch` for every anchored pattern | |
+| Imports | Parsing runs in a thread; the 100k cap applies before `detect()`; `RecursionError` is an import error | |
+| Misc | `verdikt doctor`; audit log rotates at 10 MB to `.1`; locally matched sources (ttl 0) skip the cache write; unique temp names for feed writes; shared quota groups show the group's spend | |

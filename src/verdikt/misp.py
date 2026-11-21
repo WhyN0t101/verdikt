@@ -57,7 +57,7 @@ def to_misp(report: Report) -> dict[str, Any]:
         if node.label == report.ioc:
             continue
         if node.kind == "malware":
-            tags.append({"name": f'verdikt:malware="{node.label}"'})
+            tags.append({"name": f'verdikt:malware="{node.label.replace('"', "'")}"'})
         elif (t := _NODE_TYPES.get(node.kind)) is not None:
             related_kind, related_category = _TYPES[t]
             attributes.append(

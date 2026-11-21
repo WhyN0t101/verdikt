@@ -24,7 +24,7 @@ PROFILES: dict[str, list[Fake]] = {
         Fake("virustotal", {"malicious": 0, "suspicious": 0}),
         Fake("abuseipdb", {"score": 0}),
     ],
-    "suspicious": [Fake("virustotal", {"malicious": 1, "suspicious": 0})],
+    "suspicious": [Fake("virustotal", {"malicious": 2, "suspicious": 0})],
     "malicious": [Fake("virustotal", {"malicious": 20, "suspicious": 0})],
     "unknown": [Fake("abuseipdb", {"score": 0})],
     "error": [Fake("virustotal", status=Status.ERROR)],
@@ -245,3 +245,11 @@ def test_feeds_status_without_downloads(
     result = runner.invoke(cli.app, ["feeds", "status"])
     assert result.exit_code == 0
     assert "feeds update" in result.output
+
+
+def test_doctor_lists_sources_and_paths(use_profile: UseProfile) -> None:
+    use_profile("safe")
+    result = runner.invoke(cli.app, ["doctor"])
+    assert result.exit_code == 0, result.output
+    assert "geoip" in result.output
+    assert "notify" in result.output and "db " in result.output

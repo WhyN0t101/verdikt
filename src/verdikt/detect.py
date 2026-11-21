@@ -11,7 +11,11 @@ import ioc_fanger  # pyright: ignore[reportMissingTypeStubs]
 
 from verdikt.models import IOC, IOCType
 
-INTERNAL_SUFFIXES = (".local", ".internal", ".lan", ".corp", ".home.arpa")
+INTERNAL_SUFFIXES = (
+    ".local", ".internal", ".lan", ".corp", ".home.arpa",
+    ".intranet", ".private", ".home", ".localdomain",
+)  # fmt: skip
+_NAT64 = ipaddress.ip_network("64:ff9b::/96")
 MAX_INPUT_LEN = 2048  # longest real URL we accept; stops a huge paste from reaching the regexes
 _HEX = re.compile(r"^[0-9a-f]+$")
 _HASH_LEN = {32: IOCType.MD5, 40: IOCType.SHA1, 64: IOCType.SHA256}
@@ -36,12 +40,19 @@ def _parse_ip(text: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None
         return None
 
 
+def _public(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """Globally routable, looking through NAT64 (`64:ff9b::a00:1` is 10.0.0.1 in disguise)."""
+    if isinstance(ip, ipaddress.IPv6Address) and ip in _NAT64:
+        return ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF).is_global
+    return ip.is_global
+
+
 def is_internal_host(host: str, extra_suffixes: Iterable[str] = ()) -> bool:
     """True for hosts that must never be sent to a third party."""
     host = host.lower().rstrip(".")
     ip = _parse_ip(host)
     if ip is not None:
-        return not ip.is_global
+        return not _public(ip)
     if host == "localhost" or host.endswith(".localhost") or "." not in host:
         return True
     suffixes = [*INTERNAL_SUFFIXES, *(_dot(s) for s in extra_suffixes if s.strip())]
@@ -63,7 +74,7 @@ def _normalize_domain(host: str) -> str:
     # "127.1" / "0x7f.0.0.1": browsers read these as IPs, so they are not public names
     if labels[-1].isdigit() or re.fullmatch(r"0x[0-9a-f]*", labels[-1]):
         raise DetectError(f"refusing numeric host {host!r}: ambiguous IP shorthand")
-    if len(host) > 253 or not all(_LABEL.match(lb) for lb in labels):
+    if len(host) > 253 or not all(_LABEL.fullmatch(lb) for lb in labels):
         raise DetectError(f"invalid domain: {host!r}")
     return host
 
@@ -97,12 +108,12 @@ def detect(raw: str, internal_domains: Iterable[str] = ()) -> IOC:
     internal = tuple(internal_domains)
 
     lowered = text.lower()
-    if _HEX.match(lowered) and len(lowered) in _HASH_LEN:
+    if _HEX.fullmatch(lowered) and len(lowered) in _HASH_LEN:
         return IOC(value=lowered, type=_HASH_LEN[len(lowered)])
 
     ip = _parse_ip(text)
     if ip is not None:
-        if not ip.is_global:
+        if not _public(ip):
             raise DetectError(f"refusing internal IP {ip}: never sent to third parties")
         mapped = ip.ipv4_mapped if isinstance(ip, ipaddress.IPv6Address) else None
         return IOC(value=(mapped or ip).compressed, type=IOCType.IP)

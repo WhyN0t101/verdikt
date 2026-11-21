@@ -58,6 +58,17 @@ class Settings(BaseSettings):
     slack_webhook_url: SecretStr | None = None
     telegram_bot_token: SecretStr | None = None
     telegram_chat_id: str | None = None
+    discord_webhook_url: SecretStr | None = None
+    teams_webhook_url: SecretStr | None = None
+    smtp_host: str | None = None
+    smtp_port: int = 587  # 465 uses implicit TLS, anything else STARTTLS
+    smtp_user: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_from: str | None = None
+    smtp_to: str | None = None  # comma-separated
+    notify_cooldown_hours: float = (
+        0  # skip a repeat alert for the same indicator and level; 0 = off
+    )
 
     internal_domains: str = ""
     geoip_dir: Path | None = None
@@ -69,7 +80,8 @@ class Settings(BaseSettings):
     feeds_dir: Path | None = None
     watch_every_hours: float = 0  # 0 = off; otherwise at least MIN_JOB_HOURS
     feeds_every_hours: float = 0
-    watch_notify: Literal["slack", "telegram"] | None = None
+    watch_notify: Literal["slack", "telegram", "discord", "teams", "email"] | None = None
+    watch_notify_any: bool = False  # also tell about downgrades (e.g. suspicious -> safe)
     watch_min_level: Level = Level.SUSPICIOUS
     crtsh: bool = False  # certificate transparency: slow (10 to 20 s) and often flaky
     vt_resolutions: bool = False  # passive DNS from VirusTotal: costs one extra VT call per lookup

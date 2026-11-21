@@ -21,6 +21,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.table import Table
 
+from verdikt.cache import Cache
 from verdikt.config import Settings, get_settings
 from verdikt.detect import DetectError, detect
 from verdikt.engine import Engine, build_engine
@@ -134,10 +135,11 @@ async def _notify(
     settings: Settings,
     http: httpx.AsyncClient,
     min_level: Level,
+    cache: Cache | None = None,
 ) -> None:
     for platform in platforms:
-        outcome = await notify(report, platform, settings, http, min_level)
-        if not outcome.sent and not outcome.detail.startswith("below min"):
+        outcome = await notify(report, platform, settings, http, min_level, cache)
+        if not outcome.sent and not outcome.quiet:
             err.print(f"notify {platform}: {outcome.detail}", markup=False)
         elif outcome.sent:
             err.print(f"notify {platform}: sent", markup=False)
@@ -152,7 +154,7 @@ def check(
     misp: Annotated[bool, typer.Option("--misp", help="Print a MISP event JSON instead")] = False,
     no_cache: Annotated[bool, typer.Option("--no-cache", help="Bypass cached results")] = False,
     notify_to: Annotated[
-        Platform | None, typer.Option("--notify", help="slack or telegram")
+        Platform | None, typer.Option("--notify", help="slack, telegram, discord, teams or email")
     ] = None,
     min_level: Annotated[
         Level, typer.Option("--min-level", help="Notify threshold")
@@ -164,7 +166,7 @@ def check(
     async def run(engine: Engine, http: httpx.AsyncClient) -> Report:
         report = await engine.check(ioc, no_cache=no_cache)
         if notify_to:
-            await _notify(report, [notify_to], settings, http, min_level)
+            await _notify(report, [notify_to], settings, http, min_level, engine.cache)
         return report
 
     try:
@@ -274,7 +276,7 @@ def bulk(
                 failures += 1
             codes.append(exit_code(report.level))
             if notify_to:
-                await _notify(report, [notify_to], settings, http, min_level)
+                await _notify(report, [notify_to], settings, http, min_level, engine.cache)
         return codes, failures
 
     codes, failures = asyncio.run(_with_engine(settings, run))
@@ -299,6 +301,44 @@ def sources() -> None:
             enabled = "yes" if s.enabled else off
             table.add_row(s.name, enabled, ",".join(s.supports), quota)
         out.print(table)
+
+    asyncio.run(_with_engine(settings, run))
+
+
+@app.command()
+def doctor() -> None:
+    """Show what is configured and what is missing: keys, feeds, GeoIP, notifiers, paths."""
+    settings = get_settings()
+
+    async def run(engine: Engine, http: httpx.AsyncClient) -> None:
+        for s in engine.source_status():
+            if s.enabled:
+                state = "ok"
+            elif s.requires_key:
+                state = "missing key (see .env.example)"
+            else:
+                state = "off (run `verdikt feeds update`)"
+            out.print(f"source {s.name:<14} {state}", markup=False)
+        feeds = feeds_status(settings.resolved_feeds_dir)
+        out.print(
+            f"feeds  {len(feeds)} downloaded" if feeds else "feeds  none: `verdikt feeds update`",
+            markup=False,
+        )
+        geo = settings.geoip_dir
+        out.print(
+            f"geoip  {geo if geo and geo.is_dir() else 'not set: no map locations'}", markup=False
+        )
+        notifiers = {
+            "slack": settings.slack_webhook_url,
+            "telegram": settings.telegram_bot_token and settings.telegram_chat_id,
+            "discord": settings.discord_webhook_url,
+            "teams": settings.teams_webhook_url,
+            "email": settings.smtp_host and settings.smtp_to,
+        }
+        configured = [n for n, v in notifiers.items() if v]
+        out.print(f"notify {', '.join(configured) or 'none configured'}", markup=False)
+        out.print(f"db     {settings.resolved_db_path}", markup=False)
+        out.print(f"audit  {settings.resolved_audit_path}", markup=False)
 
     asyncio.run(_with_engine(settings, run))
 
@@ -430,8 +470,9 @@ def watch_run(
     async def run(engine: Engine, http: httpx.AsyncClient) -> list[WatchChange]:
         changes, reports = await recheck(engine)
         if notify_to:
+            level = Level.SAFE if settings.watch_notify_any else min_level
             for report in reports:
-                await _notify(report, [notify_to], settings, http, min_level)
+                await _notify(report, [notify_to], settings, http, level, engine.cache)
         return changes
 
     changes = asyncio.run(_with_engine(settings, run))

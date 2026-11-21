@@ -6,7 +6,7 @@ IOC triage tool. Takes an IP, domain, URL or hash, queries threat-intel sources 
 
 ## Status
 
-M0–M9 implemented in one pass at the user's request (no commits yet). Update this file when a command or path changes. Frontend types: `npm run gen:types` dumps the schema offline via `scripts/dump_openapi.py` (the runtime `/openapi.json` needs the session token).
+M0–M9 implemented, plus the post-M9 batches in `PLAN.md` §19 (all committed on `main`). Update this file when a command or path changes. Frontend types: `npm run gen:types` dumps the schema offline via `scripts/dump_openapi.py` (the runtime `/openapi.json` needs the session token).
 
 ## Commands
 
@@ -88,7 +88,7 @@ cd web && npm run lint && npm run typecheck && npm test
 
 ## Git
 
-- Not a repo yet; `git init` happens in M0.
+- Repo lives on `main`; CI is `.github/workflows/ci.yml`.
 - Commit only when asked. Message format: `TYPE: summary` (`ADD`, `FIX`, `UPDATE`, `REMOVE`, `REFACTOR`, `DOCS`, `TEST`, `CHORE`), imperative, ≤72 chars.
 - Branches: `type/short-description`. One milestone = one branch.
 - `.gitignore` must include `.env`, `*.db`, `src/verdikt/web_dist/`, `web/node_modules/`, `*.mmdb`, `.codegraph/`.

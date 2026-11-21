@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS cases (
 CREATE TABLE IF NOT EXISTS case_reports (
   case_id TEXT NOT NULL, report_id TEXT NOT NULL, added_at TEXT NOT NULL,
   PRIMARY KEY (case_id, report_id));
+CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS budget (
   source TEXT NOT NULL, day TEXT NOT NULL, used INTEGER NOT NULL,
   PRIMARY KEY (source, day));
@@ -179,7 +180,7 @@ def clean_tags(tags: list[str]) -> list[str]:
     out: list[str] = []
     for t in tags:
         t = t.strip().lower()
-        if not _TAG.match(t):
+        if not _TAG.fullmatch(t):
             raise CaseError(f"invalid tag {t!r}: 1 to 30 characters of a-z, 0-9, space, _ : . -")
         if t not in out:
             out.append(t)
@@ -205,6 +206,9 @@ class Cache:
         with self._lock:
             self._db.executescript(_SCHEMA)
             self._prune()
+
+    def now(self) -> datetime:
+        return self._clock()
 
     def _prune(self) -> dict[str, int]:
         """Drop what can never be used again. Reports carry full vendor payloads and only grow.
@@ -663,6 +667,16 @@ class Cache:
             WatchEvent.model_validate(dict(zip(WatchEvent.model_fields, r, strict=True)))
             for r in rows
         ]
+
+    # --- small key/value state (scheduler last run, notification cooldowns) ---------
+    def kv_get(self, key: str) -> str | None:
+        with self._lock:
+            row = self._db.execute("SELECT v FROM kv WHERE k=?", (key,)).fetchone()
+        return str(row[0]) if row else None
+
+    def kv_set(self, key: str, value: str) -> None:
+        with self._lock, self._db:
+            self._db.execute("INSERT OR REPLACE INTO kv VALUES (?,?)", (key, value))
 
     # --- daily budget -------------------------------------------------------
     def _day(self) -> str:

@@ -14,6 +14,7 @@ import ipaddress
 import json
 import logging
 import sqlite3
+import uuid
 import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -138,7 +139,8 @@ def parse_epss(data: bytes) -> list[tuple[str, float, float]]:
 
 
 def _atomic_write(path: Path, data: bytes | str) -> None:
-    tmp = path.with_suffix(path.suffix + ".tmp")
+    # unique name: two overlapping updates must not write the same temp file
+    tmp = path.with_suffix(f"{path.suffix}.{uuid.uuid4().hex[:8]}.tmp")
     if isinstance(data, str):
         tmp.write_text(data, encoding="utf-8")
     else:
@@ -172,7 +174,7 @@ async def _download(http: httpx.AsyncClient, url: str) -> bytes:
 
 
 def _build_epss(directory: Path, rows: list[tuple[str, float, float]]) -> None:
-    tmp = directory / "epss.sqlite.tmp"
+    tmp = directory / f"epss.sqlite.{uuid.uuid4().hex[:8]}.tmp"
     tmp.unlink(missing_ok=True)
     db = sqlite3.connect(tmp)
     try:
@@ -272,7 +274,7 @@ def register_import(directory: Path, name: str, count: int) -> None:
 def forget_import(directory: Path, name: str) -> bool:
     """Remove an imported list. Only names that `write_import` could have created are accepted,
     so a crafted name can never point the delete outside the imported folder."""
-    if not NAME.match(name):
+    if not NAME.fullmatch(name):
         return False
     folder = (directory / "imported").resolve()
     path = (folder / f"{name}.json").resolve()

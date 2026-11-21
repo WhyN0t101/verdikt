@@ -8,7 +8,7 @@ malicious:                      # any match -> MALICIOUS
   malwarebazaar: {match: true}
   urlhaus: {url_online: true}          # the exact URL is listed and online
 suspicious:                     # any match -> SUSPICIOUS
-  virustotal: {malicious: 1, suspicious: 1}
+  virustotal: {malicious: 2, suspicious: 1}   # one malicious engine alone is usually a false positive
   abuseipdb: {score: 25}
   hybrid: {malicious: true}
   hashlookup: {known_malicious: true}

@@ -20,7 +20,8 @@ def vt() -> SourceResult:
 
 CASES: list[tuple[str, list[SourceResult], Level]] = [
     ("vt malicious threshold", [row("virustotal", malicious=5)], Level.MALICIOUS),
-    ("vt 1 malicious", [row("virustotal", malicious=1, suspicious=0)], Level.SUSPICIOUS),
+    ("vt 2 malicious", [row("virustotal", malicious=2, suspicious=0)], Level.SUSPICIOUS),
+    ("vt 1 malicious is noise", [row("virustotal", malicious=1, suspicious=0)], Level.UNKNOWN),
     ("vt 1 suspicious", [row("virustotal", malicious=0, suspicious=1)], Level.SUSPICIOUS),
     ("abuseipdb 75", [row("abuseipdb", score=75)], Level.MALICIOUS),
     ("abuseipdb 25", [row("abuseipdb", score=25)], Level.SUSPICIOUS),
@@ -84,7 +85,7 @@ CASES: list[tuple[str, list[SourceResult], Level]] = [
     # benign override
     (
         "riot downgrades suspicious",
-        [row("virustotal", malicious=1), row("greynoise", riot=True)],
+        [row("virustotal", malicious=2), row("greynoise", riot=True)],
         Level.SAFE,
     ),
     (

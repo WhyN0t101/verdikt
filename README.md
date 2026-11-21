@@ -70,6 +70,9 @@ Secrets and paths come from `.env` in the working directory (copy `.env.example`
 | `VERDIKT_GREYNOISE_API_KEY` | GreyNoise Community, optional |
 | `VERDIKT_SLACK_WEBHOOK_URL` | Slack incoming webhook for `--notify slack` |
 | `VERDIKT_TELEGRAM_BOT_TOKEN`, `VERDIKT_TELEGRAM_CHAT_ID` | Telegram Bot API for `--notify telegram` |
+| `VERDIKT_DISCORD_WEBHOOK_URL`, `VERDIKT_TEAMS_WEBHOOK_URL` | Incoming webhooks for `--notify discord` and `--notify teams` |
+| `VERDIKT_SMTP_HOST`, `VERDIKT_SMTP_PORT`, `VERDIKT_SMTP_USER`, `VERDIKT_SMTP_PASSWORD`, `VERDIKT_SMTP_FROM`, `VERDIKT_SMTP_TO` | Email for `--notify email`. Port 465 uses implicit TLS, any other port STARTTLS. `SMTP_TO` is comma-separated |
+| `VERDIKT_NOTIFY_COOLDOWN_HOURS` | Skip a repeat alert for the same indicator at the same level for this long. `0` (default) is off |
 | `VERDIKT_INTERNAL_DOMAINS` | Comma-separated suffixes of your own domains, never sent to third parties (for example `corp.example.com`) |
 | `VERDIKT_GEOIP_DIR` | Folder holding `GeoLite2-City.mmdb` and `GeoLite2-ASN.mmdb`; without them the map is empty |
 | `VERDIKT_DB_PATH` | SQLite file for the cache, history and budgets. Default: the user data directory (`%LOCALAPPDATA%\verdikt` on Windows, `~/.local/share/verdikt` elsewhere), never the repository |
@@ -79,7 +82,7 @@ Secrets and paths come from `.env` in the working directory (copy `.env.example`
 | `VERDIKT_AUDIT_LOG` | Path of the JSON-lines audit log. Default: `audit.jsonl` in the user data directory |
 | `VERDIKT_FEEDS_DIR` | Folder for the downloaded feeds (blocklists, Tor exits, Tranco, KEV, EPSS). Default: `feeds` in the user data directory |
 | `VERDIKT_WATCH_EVERY_HOURS`, `VERDIKT_FEEDS_EVERY_HOURS` | Background watchlist re-check and feed refresh inside `verdikt ui`. `0` (default) is off, otherwise at least `1` |
-| `VERDIKT_WATCH_NOTIFY`, `VERDIKT_WATCH_MIN_LEVEL` | `slack` or `telegram` for scheduled verdict changes, and the lowest level to send (default `suspicious`) |
+| `VERDIKT_WATCH_NOTIFY`, `VERDIKT_WATCH_MIN_LEVEL`, `VERDIKT_WATCH_NOTIFY_ANY` | `slack`, `telegram`, `discord`, `teams` or `email` for scheduled verdict changes, the lowest level to send (default `suspicious`), and `true` to also report downgrades such as suspicious to safe |
 | `VERDIKT_VT_RESOLUTIONS` | `true` adds passive DNS from VirusTotal resolutions. Costs one extra VirusTotal call per domain or IP check and shares its 4/min and 500/day |
 | `VERDIKT_CRTSH` | `true` adds crt.sh certificate transparency. Off by default: it takes 10 to 20 seconds and often times out |
 | `VERDIKT_SESSION_TOKEN` | Fixed API token for `verdikt ui`, for automation that calls a long-running instance. Unset: a random token per run |
@@ -175,16 +178,16 @@ Details per source are in `docs/SOURCES.md`.
 
 verdikt takes care not to leak what you investigate.
 
-- **Internal targets are never sent anywhere.** Private, loopback and link-local IPs, URLs whose host is internal, `localhost`, single-label names, anything ending in `.local`, `.internal`, `.lan`, `.corp` or `.home.arpa`, and any suffix in `VERDIKT_INTERNAL_DOMAINS` are rejected before any request is made. Shorthand IPs such as `127.1` and `0x7f.0.0.1` are rejected too. Input is capped at 2048 characters.
+- **Internal targets are never sent anywhere.** Private, loopback and link-local IPs, URLs whose host is internal, `localhost`, single-label names, anything ending in `.local`, `.internal`, `.lan`, `.corp`, `.home.arpa`, `.intranet`, `.private`, `.home` or `.localdomain`, NAT64 addresses that wrap a private IPv4, and any suffix in `VERDIKT_INTERNAL_DOMAINS` are rejected before any request is made. Shorthand IPs such as `127.1` and `0x7f.0.0.1` are rejected too. Input is capped at 2048 characters.
 - **DNS resolution is off by default.** Resolving a domain can contact the attacker's name server. Enable it with `VERDIKT_DNS_RESOLVE=true` only if you accept that.
 - **urlscan is search only.** verdikt never submits a scan, so it never makes urlscan visit a target and never publishes anything.
 - **The map makes no requests.** Tile servers would see what you investigate; the dot-matrix map is drawn from a bundled file.
 - **Geolocation is local.** GeoLite2 lookups run on your machine with no quota and no leak.
-- **The API is local only.** It binds to `127.0.0.1`, checks the `Host` header, requires a per-run session token, accepts only JSON on POST and sends no CORS headers.
+- **The API is local only.** (The session token is embedded in the page served to loopback, so on a shared multi-user machine another local user could read it. Run verdikt on a single-user machine.) It binds to `127.0.0.1`, checks the `Host` header, requires a per-run session token, accepts only JSON on POST and sends no CORS headers.
 
 ## Notifications
 
-`--notify slack` or `--notify telegram` posts the result when its level is at or above `--min-level` (default `suspicious`). The order is SAFE, UNKNOWN, SUSPICIOUS, MALICIOUS. The message has a level icon, the defanged indicator and type, one line per source that hit, and a link to the VirusTotal or urlscan page. Feed-derived text is escaped before sending (HTML escaping for Telegram, `&`, `<`, `>` for Slack). A failed send is reported in the CLI output, never silently dropped, and never includes the webhook URL or token.
+`--notify slack|telegram|discord|teams|email` posts the result when its level is at or above `--min-level` (default `suspicious`). The order is SAFE, UNKNOWN, SUSPICIOUS, MALICIOUS. The message has a level icon, the defanged indicator and type, one line per source that hit, and a link to the VirusTotal or urlscan page. Feed-derived text is escaped before sending (HTML escaping for Telegram, `&`, `<`, `>` for Slack). A failed send is reported in the CLI output, never silently dropped, and never includes the webhook URL or token.
 
 ## Local feeds, known-good lists and CVE context
 
@@ -263,7 +266,7 @@ src/verdikt/
   cache.py         SQLite: source cache, report history, daily budget
   sources/         one file per threat-intelligence source
   enrich/          GeoLite2 lookups, optional DNS
-  notify/          Slack and Telegram
+  notify/          Slack, Telegram, Discord, Teams, email
   api/app.py       FastAPI routes, security checks, static SPA
   cli.py           command line
   extract.py       indicators from free text (ioc-finder + detect)
@@ -277,6 +280,10 @@ scripts/           dump_openapi.py
 tests/             pytest suite and fixtures
 docs/              design notes and reference documents
 ```
+
+## Checking your setup
+
+`verdikt doctor` lists which sources are enabled, whether feeds and GeoIP are set up, which notifiers are configured and where the database and audit log live.
 
 ## Troubleshooting
 
