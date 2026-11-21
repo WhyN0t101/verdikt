@@ -17,7 +17,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from verdikt.models import Model, Report, SeenBefore, SourceResult, Status
+from verdikt.models import IOCType, Level, Model, Report, SeenBefore, SourceResult, Status
 
 Clock = Callable[[], datetime]
 
@@ -370,17 +370,52 @@ class Cache:
         except ValidationError:  # written by an older schema: treat as gone, not a 500
             return None
 
-    def list_reports(self, limit: int = 50, offset: int = 0) -> list[ReportSummary]:
+    def list_reports(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        q: str | None = None,
+        level: Level | None = None,
+        ioc_type: IOCType | None = None,
+    ) -> list[ReportSummary]:
+        """Newest first. `q` is a literal, case-insensitive substring of the indicator."""
+        where: list[str] = []
+        args: list[str | int] = []
+        if q:
+            where.append("ioc LIKE ? ESCAPE '!'")  # `!` is not special to LIKE or SQL strings
+            literal = q.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+            args.append(f"%{literal}%")
+        if level is not None:
+            where.append("level = ?")
+            args.append(level.value)
+        if ioc_type is not None:
+            where.append("ioc_type = ?")
+            args.append(ioc_type.value)
+        clause = ("WHERE " + " AND ".join(where)) if where else ""
+        # the id tie-break keeps pages stable; a report saved between two pages can still shift
+        # the rows by one, which is fine for browsing
+        sql = (
+            "SELECT id, ioc, ioc_type, level, created_at FROM reports "  # noqa: S608 (fixed clauses)
+            f"{clause} ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?"
+        )
         with self._lock:
-            rows = self._db.execute(
-                "SELECT id, ioc, ioc_type, level, created_at FROM reports "
-                "ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                (limit, offset),
-            ).fetchall()
+            rows = self._db.execute(sql, (*args, limit, offset)).fetchall()
         return [
             ReportSummary(id=r[0], ioc=r[1], ioc_type=r[2], level=r[3], created_at=r[4])
             for r in rows
         ]
+
+    def previous_report(self, report: Report) -> Report | None:
+        """The newest report of the same indicator saved before `report` (None for the first)."""
+        stamp = report.created_at.isoformat()
+        with self._lock:
+            row = self._db.execute(
+                "SELECT id FROM reports WHERE ioc=? AND id != ? "
+                "AND (created_at < ? OR (created_at = ? AND id < ?)) "
+                "ORDER BY created_at DESC, id DESC LIMIT 1",
+                (report.ioc, report.id, stamp, stamp, report.id),
+            ).fetchone()
+        return self.get_report(row[0]) if row else None
 
     def checked_since(self, age: timedelta) -> set[str]:
         """IOCs that have a stored report newer than `age` (for `bulk --resume`)."""

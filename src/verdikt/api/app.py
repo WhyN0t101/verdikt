@@ -31,11 +31,12 @@ from verdikt.cache import (
 )
 from verdikt.config import get_settings
 from verdikt.detect import DetectError
+from verdikt.diff import ReportDiff, diff_reports
 from verdikt.engine import Engine, SourceInfo, build_engine
 from verdikt.export import case_html, case_markdown, report_html, report_markdown
 from verdikt.extract import Extraction, extract_iocs
 from verdikt.misp import to_misp
-from verdikt.models import Model, Report
+from verdikt.models import IOCType, Level, Model, Report
 from verdikt.scheduler import JOBS, JobStatus, Scheduler
 from verdikt.sources.feeds import (
     feeds_status,
@@ -90,6 +91,7 @@ class ExtractRequest(BaseModel):
 class WatchState(Model):
     entries: list[WatchEntry]
     events: list[WatchEvent]
+    max_entries: int = WATCHLIST_MAX
 
 
 class FeedInfo(Model):
@@ -226,8 +228,13 @@ def create_app(
         engine: EngineDep,
         limit: Annotated[int, Query(ge=1, le=200)] = 50,
         offset: Annotated[int, Query(ge=0)] = 0,
+        q: Annotated[str | None, Query(max_length=200)] = None,
+        level: Level | None = None,
+        type: IOCType | None = None,
     ) -> list[ReportSummary]:
-        return engine.cache.list_reports(limit, offset)
+        if level is Level.INFO:  # a report is never INFO
+            raise HTTPException(status_code=422, detail="level must not be info")
+        return engine.cache.list_reports(limit, offset, q, level, type)
 
     @app.get("/api/reports/{report_id}", response_model=Report)
     async def report(report_id: str, engine: EngineDep, raw: bool = False) -> Report:
@@ -235,6 +242,20 @@ def create_app(
         if found is None:
             raise HTTPException(status_code=404, detail="report not found")
         return found if raw else found.without_raw()
+
+    @app.get("/api/reports/{report_id}/diff", response_model=ReportDiff)
+    async def report_diff(
+        report_id: str, engine: EngineDep, against: str | None = None
+    ) -> ReportDiff:
+        found = engine.cache.get_report(report_id)
+        if found is None:
+            raise HTTPException(status_code=404, detail="report not found")
+        if against is None:
+            return diff_reports(engine.cache.previous_report(found), found)
+        earlier = engine.cache.get_report(against)
+        if earlier is None:
+            raise HTTPException(status_code=404, detail="report not found")
+        return diff_reports(earlier, found)
 
     @app.get("/api/reports/{report_id}/stix")
     async def report_stix(report_id: str, engine: EngineDep) -> JSONResponse:
