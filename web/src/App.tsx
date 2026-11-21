@@ -6,6 +6,7 @@ import { EmptyState } from "./components/EmptyState";
 import { HistoryList } from "./components/HistoryList";
 import { LevelBadge } from "./components/LevelBadge";
 import { Batch } from "./components/Batch";
+import { Cases } from "./components/Cases";
 import { Logo } from "./components/Logo";
 import { LogStream } from "./components/LogStream";
 import { MapView } from "./components/MapView";
@@ -28,11 +29,12 @@ const TABS: { id: Tab; label: string; key: string }[] = [
   { id: "raw", label: "Raw JSON", key: "3" },
 ];
 
-type View = "check" | "overview" | "batch";
+type View = "check" | "overview" | "batch" | "cases";
 const VIEWS: { id: View; label: string }[] = [
   { id: "check", label: "Check" },
   { id: "overview", label: "Overview" },
   { id: "batch", label: "Batch" },
+  { id: "cases", label: "Cases" },
 ];
 
 type Theme = "dark" | "light";
@@ -188,6 +190,11 @@ export default function App() {
       {view === "overview" && (
         <div className="min-h-0 flex-1 overflow-auto">
           <Overview onCheck={(ioc) => run(ioc)} />
+        </div>
+      )}
+      {view === "cases" && (
+        <div className="min-h-0 flex-1 overflow-auto">
+          <Cases onOpen={(id) => void open(id)} />
         </div>
       )}
       {view === "batch" && (

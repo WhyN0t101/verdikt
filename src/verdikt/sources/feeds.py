@@ -20,12 +20,15 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 
+from verdikt.detect import DetectError, detect
 from verdikt.jsonutil import arr, obj
 from verdikt.models import IOC, IOCType, SourceResult, Status
 from verdikt.sources.base import BaseSource, Gate
+from verdikt.sources.importers import NAME
 
 log = logging.getLogger(__name__)
 
@@ -35,6 +38,8 @@ TOR = "https://check.torproject.org/torbulkexitlist"
 TRANCO = "https://tranco-list.eu/top-1m.csv.zip"
 KEV = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 EPSS = "https://epss.cyentia.com/epss_scores-current.csv.gz"
+OPENPHISH = "https://openphish.com/feed.txt"  # community feed: free for non-commercial use
+MAX_PHISH = 50_000
 
 MAX_BYTES = 40 * 1024 * 1024  # a feed bigger than this is not what we think it is
 DEFAULT_TOP = 100_000  # Tranco ranks kept; the full list is 1M domains
@@ -83,6 +88,22 @@ def parse_tranco(data: bytes, top: int) -> list[str]:
         name = next(n for n in zf.namelist() if n.endswith(".csv"))
         rows = csv.reader(io.TextIOWrapper(zf.open(name), encoding="utf-8"))
         return [row[1].lower() for _, row in zip(range(top), rows, strict=False) if len(row) > 1]
+
+
+def parse_url_list(text: str, limit: int = MAX_PHISH) -> list[str]:
+    """One URL per line (OpenPhish). Normalized with `detect()`; junk and internal hosts dropped."""
+    out: dict[str, None] = {}
+    for line in text.splitlines()[:limit]:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        try:
+            ioc = detect(line)
+        except DetectError:
+            continue
+        if ioc.type is IOCType.URL:
+            out[ioc.value] = None
+    return list(out)
 
 
 def parse_kev(data: bytes) -> dict[str, dict[str, Any]]:
@@ -209,6 +230,13 @@ async def update_feeds(
         _atomic_write(directory / "tranco.txt", "\n".join(domains))
         return len(domains)
 
+    def save_phish(data: bytes) -> int:
+        urls = parse_url_list(data.decode("utf-8", "replace"))
+        if not urls:
+            raise ValueError("no URLs found")
+        _atomic_write(directory / "openphish.txt", "\n".join(urls))
+        return len(urls)
+
     def save_kev(data: bytes) -> int:
         kev = parse_kev(data)
         if not kev:
@@ -227,10 +255,35 @@ async def update_feeds(
     await run("spamhaus_drop", DROP, save_drop)
     await run("tor_exits", TOR, save_ips("tor"))
     await run("tranco", TRANCO, save_tranco)
+    await run("openphish", OPENPHISH, save_phish)
     await run("cisa_kev", KEV, save_kev)
     await run("epss", EPSS, save_epss)
     await asyncio.to_thread(_atomic_write, directory / META, json.dumps(meta, indent=1))
     return results
+
+
+def register_import(directory: Path, name: str, count: int) -> None:
+    """Record an imported list in meta.json so the store reloads and `feeds status` shows it."""
+    meta = _read_meta(directory)
+    meta[f"import:{name}"] = {"fetched_at": datetime.now(UTC).isoformat(), "count": count}
+    _atomic_write(directory / META, json.dumps(meta, indent=1))
+
+
+def forget_import(directory: Path, name: str) -> bool:
+    """Remove an imported list. Only names that `write_import` could have created are accepted,
+    so a crafted name can never point the delete outside the imported folder."""
+    if not NAME.match(name):
+        return False
+    folder = (directory / "imported").resolve()
+    path = (folder / f"{name}.json").resolve()
+    if path.parent != folder:
+        return False
+    existed = path.is_file()
+    path.unlink(missing_ok=True)
+    meta = _read_meta(directory)
+    if meta.pop(f"import:{name}", None) is not None or existed:
+        _atomic_write(directory / META, json.dumps(meta, indent=1))
+    return existed
 
 
 class FeedStore:
@@ -243,6 +296,9 @@ class FeedStore:
         self._tor: set[str] = set()
         self._drop: list[ipaddress.IPv4Network | ipaddress.IPv6Network] = []
         self._rank: dict[str, int] = {}
+        self._phish_urls: set[str] = set()
+        self._phish_hosts: set[str] = set()
+        self._imported: dict[str, str] = {}  # value -> import name
 
     def _lines(self, name: str) -> list[str]:
         try:
@@ -250,13 +306,30 @@ class FeedStore:
         except OSError:
             return []
 
+    def _clear(self) -> None:
+        self._feodo = set()
+        self._tor = set()
+        self._drop, self._rank = [], {}
+        self._phish_urls, self._phish_hosts, self._imported = set(), set(), {}
+
+    def _load_imports(self) -> dict[str, str]:
+        out: dict[str, str] = {}
+        for path in sorted((self.directory / "imported").glob("*.json")):
+            try:
+                doc = obj(json.loads(path.read_text(encoding="utf-8")))
+            except (OSError, ValueError):
+                continue
+            for e in arr(doc.get("entries")):
+                if v := obj(e).get("value"):
+                    out.setdefault(str(v), path.stem)
+        return out
+
     def _reload(self) -> None:
         try:
             stamp = (self.directory / META).stat().st_mtime
         except OSError:
             self._stamp = None
-            self._feodo = self._tor = set()
-            self._drop, self._rank = [], {}
+            self._clear()
             return
         if stamp == self._stamp:
             return
@@ -265,6 +338,9 @@ class FeedStore:
         self._tor = set(self._lines("tor.txt"))
         self._drop = [ipaddress.ip_network(c) for c in self._lines("drop.txt")]
         self._rank = {d: i + 1 for i, d in enumerate(self._lines("tranco.txt"))}
+        self._phish_urls = set(self._lines("openphish.txt"))
+        self._phish_hosts = {h for u in self._phish_urls if (h := urlsplit(u).hostname)}
+        self._imported = self._load_imports()
 
     @property
     def available(self) -> bool:
@@ -286,12 +362,23 @@ class FeedStore:
         self._reload()
         return self._rank.get(domain)
 
+    def exact(self, ioc: IOC) -> str | None:
+        """Exact-value listings: OpenPhish URLs and hosts, and imported MISP/STIX indicators."""
+        self._reload()
+        if name := self._imported.get(ioc.value):
+            return f"imported list {name}"
+        if ioc.type is IOCType.URL and ioc.value in self._phish_urls:
+            return "OpenPhish"
+        if ioc.type is IOCType.DOMAIN and ioc.value in self._phish_hosts:
+            return "OpenPhish (host of a listed URL)"
+        return None
+
 
 class LocalFeeds(BaseSource):
-    """Blocklists (Feodo C2, Spamhaus DROP), Tor exit nodes and the Tranco top sites."""
+    """Blocklists, Tor exits, Tranco top sites, OpenPhish and imported MISP/STIX indicators."""
 
     name = "localfeeds"
-    supports = frozenset({IOCType.IP, IOCType.DOMAIN})
+    supports = frozenset(IOCType)
     requires_key = False
     ttl = timedelta(0)  # local data: never serve a cached answer across a feed update
 
@@ -304,26 +391,41 @@ class LocalFeeds(BaseSource):
         return self._store.available
 
     async def lookup(self, ioc: IOC, http: Gate) -> SourceResult:
+        listed_by = self._store.exact(ioc)
+        tor = False
+        rank: int | None = None
+        link = "https://tranco-list.eu/"
         if ioc.type is IOCType.IP:
-            listed, tor, which = self._store.ip(ioc.value)
-            tags = [t for t in (which, "tor-exit" if tor else None) if t]
-            summary = (
-                f"listed: {which}" if listed else "Tor exit node" if tor else "not on local lists"
+            blocked, tor, which = self._store.ip(ioc.value)
+            listed_by = which if blocked else listed_by
+            link = (
+                f"https://metrics.torproject.org/exonerator.html?ip={ioc.value}"
+                if tor and not listed_by
+                else "https://feodotracker.abuse.ch/blocklist/"
             )
-            return self.result(
-                Status.OK,
-                summary,
-                metrics={"blocklisted": listed, "tor_exit": tor, "top_site": False},
-                tags=tags,
-                link=f"https://metrics.torproject.org/exonerator.html?ip={ioc.value}"
-                if tor and not listed
-                else "https://feodotracker.abuse.ch/blocklist/",
-            )
-        rank = self._store.top_rank(ioc.value)
+        elif ioc.type is IOCType.DOMAIN:
+            rank = self._store.top_rank(ioc.value)
+            link = f"https://tranco-list.eu/query/{ioc.value}"
+        tags = [
+            t for t in (listed_by, "tor-exit" if tor else None, "tranco-top" if rank else None) if t
+        ]
+        summary = (
+            f"listed: {listed_by}"
+            if listed_by
+            else "Tor exit node"
+            if tor
+            else f"Tranco top-site rank {rank:,}"
+            if rank
+            else "not on local lists"
+        )
         return self.result(
             Status.OK,
-            f"Tranco top-site rank {rank:,}" if rank else "not in the Tranco top sites",
-            metrics={"blocklisted": False, "tor_exit": False, "top_site": rank is not None},
-            tags=["tranco-top"] if rank else [],
-            link=f"https://tranco-list.eu/query/{ioc.value}",
+            summary,
+            metrics={
+                "blocklisted": listed_by is not None,
+                "tor_exit": tor,
+                "top_site": rank is not None,
+            },
+            tags=tags,
+            link=link,
         )

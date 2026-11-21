@@ -5,6 +5,7 @@ from __future__ import annotations
 from verdikt.config import Settings
 from verdikt.sources.abuseipdb import AbuseIPDB
 from verdikt.sources.base import BaseSource, Source
+from verdikt.sources.crtsh import CrtSh
 from verdikt.sources.feeds import LocalFeeds
 from verdikt.sources.greynoise import GreyNoise
 from verdikt.sources.hashlookup import Hashlookup
@@ -12,6 +13,8 @@ from verdikt.sources.hybrid import HybridAnalysis
 from verdikt.sources.internetdb import InternetDB
 from verdikt.sources.malwarebazaar import MalwareBazaar
 from verdikt.sources.otx import OTX
+from verdikt.sources.passivedns import PassiveDNS
+from verdikt.sources.rdap import RDAP
 from verdikt.sources.threatfox import ThreatFox
 from verdikt.sources.urlhaus import URLhaus
 from verdikt.sources.urlscan import Urlscan
@@ -36,6 +39,9 @@ def build_sources(settings: Settings) -> list[Source]:
         InternetDB(),
         HybridAnalysis(k("hybrid_api_key")),
         Hashlookup(),
+        RDAP(),
+        CrtSh(settings.crtsh),
+        PassiveDNS(k("vt_api_key"), settings.vt_resolutions),
         LocalFeeds(settings.resolved_feeds_dir),
     ]
     return sources

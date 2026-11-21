@@ -120,9 +120,10 @@ class Engine:
 
     # --- helpers ------------------------------------------------------------
     def _limiter(self, src: Source) -> Limiter:
-        if src.name not in self._limiters:
-            self._limiters[src.name] = self._limiter_factory(*src.rate)
-        return self._limiters[src.name]
+        group = src.quota_group or src.name
+        if group not in self._limiters:
+            self._limiters[group] = self._limiter_factory(*src.rate)
+        return self._limiters[group]
 
     def source_status(self) -> list[SourceInfo]:
         return [
@@ -160,11 +161,12 @@ class Engine:
 
     async def _fetch(self, src: Source, ioc: IOC) -> SourceResult:
         gate = Gate(
-            src.name,
+            src.quota_group or src.name,
             self._http,
             self._limiter(src),
             cache=self.cache,
             daily_budget=src.daily_budget,
+            timeout=src.timeout,
             sleep=self._sleep,
             backoff=self._backoff,
         )

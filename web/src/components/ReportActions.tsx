@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { api } from "../api";
 import { downloadText } from "../lib/csv";
 import { defang, shortenMiddle } from "../lib/format";
@@ -55,6 +56,25 @@ export function ReportActions({ report, onOpen }: { report: Report; onOpen: (id:
     mutationFn: (label: FeedbackLabel) => api.feedback(report.id, label),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["stats"] }),
   });
+  const [caseId, setCaseId] = useState("");
+  const cases = useQuery({ queryKey: ["cases"], queryFn: () => api.cases() });
+  const refreshCases = () => void qc.invalidateQueries({ queryKey: ["cases"] });
+  const addToCase = useMutation({ mutationFn: (id: string) => api.caseAdd(id, report.id), onSuccess: refreshCases });
+  const newCase = useMutation({
+    mutationFn: async () => api.caseAdd((await api.caseCreate(`Investigation: ${report.ioc}`)).id, report.id),
+    onSuccess: refreshCases,
+  });
+  const exp = useMutation({
+    mutationFn: async (kind: "md" | "html" | "misp") => ({
+      kind,
+      text: await api.download(kind === "misp" ? `/api/reports/${report.id}/misp` : `/api/reports/${report.id}/export?format=${kind}`),
+    }),
+    onSuccess: ({ kind, text }) => {
+      const ext = kind === "misp" ? "misp.json" : kind;
+      const type = kind === "html" ? "text/html" : kind === "md" ? "text/markdown" : "application/json";
+      downloadText(`verdikt-${report.id}.${ext}`, text, type);
+    },
+  });
   const stix = useMutation({
     mutationFn: () => api.stix(report.id),
     onSuccess: (text) => downloadText(`verdikt-${report.id}.stix.json`, text, "application/stix+json"),
@@ -102,11 +122,48 @@ export function ReportActions({ report, onOpen }: { report: Report; onOpen: (id:
           <button type="button" disabled={stix.isPending} onClick={() => stix.mutate()} className={BTN}>
             Export STIX
           </button>
+          <button type="button" disabled={exp.isPending} onClick={() => exp.mutate("misp")} className={BTN}>
+            Export MISP
+          </button>
+          <button type="button" disabled={exp.isPending} onClick={() => exp.mutate("md")} className={BTN}>
+            Report (Markdown)
+          </button>
+          <button type="button" disabled={exp.isPending} onClick={() => exp.mutate("html")} className={BTN}>
+            Report (HTML)
+          </button>
+          <div className="flex w-full items-center gap-2">
+            <label htmlFor="add-case" className="sr-only">
+              Add to case
+            </label>
+            <select
+              id="add-case"
+              value={caseId}
+              onChange={(e) => setCaseId(e.target.value)}
+              className="min-w-0 flex-1 border border-line-strong bg-bg px-2 py-1 text-xs"
+            >
+              <option value="">Add to case…</option>
+              {cases.data?.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.title}
+                </option>
+              ))}
+            </select>
+            <button type="button" disabled={!caseId || addToCase.isPending} onClick={() => addToCase.mutate(caseId)} className={BTN}>
+              Add
+            </button>
+            <button type="button" disabled={newCase.isPending} onClick={() => newCase.mutate()} className={BTN}>
+              New case
+            </button>
+          </div>
           <p className="w-full text-xs text-muted" role="status" aria-live="polite">
             {feedback.isSuccess && "Feedback recorded."}
             {feedback.isError && `Could not save feedback: ${feedback.error.message}`}
             {watchAdd.isError && `Could not watch: ${watchAdd.error.message}`}
             {stix.isError && `Could not export: ${stix.error.message}`}
+            {exp.isError && `Could not export: ${exp.error.message}`}
+            {addToCase.isSuccess && "Added to the case."}
+            {newCase.isSuccess && "Case created with this report."}
+            {(addToCase.isError || newCase.isError) && `Could not add to a case: ${(addToCase.error ?? newCase.error)?.message}`}
           </p>
         </div>
       </section>

@@ -1,4 +1,4 @@
-import type { Report, SourceInfo } from "../model";
+import type { Report, SourceInfo, SourceResult } from "../model";
 import { LEVEL_BORDER, LevelBadge } from "./LevelBadge";
 
 interface Props {
@@ -15,6 +15,37 @@ function Skeleton({ name }: { name: string }) {
         <div className="pixel h-3 w-40 rounded-sm" role="status" aria-label={`${name} loading`} />
       </td>
     </tr>
+  );
+}
+
+const ROLE_TEXT: Record<string, string> = {
+  strong: "Strong source: counts towards the verdict and can back a SAFE verdict.",
+  weak: "Counts towards the verdict but cannot back SAFE on its own.",
+  feed: "List-only feed: a listing counts, but \"not listed\" carries no weight.",
+  context: "Context only: shown for the analyst, never changes the verdict.",
+  "no answer": "No usable answer: an error, rate limit or missing record. It is never counted as clean.",
+};
+
+/** Why this row counted the way it did: its role, weight, and the rules that matched. */
+function Why({ r }: { r: SourceResult }) {
+  if (!r.role) return null;
+  return (
+    <details className="mt-1 text-xs">
+      <summary className="label cursor-pointer">Why</summary>
+      <div className="mt-1 space-y-1 text-muted">
+        <p>{ROLE_TEXT[r.role] ?? r.role}</p>
+        <p className="mono">Weight in confidence: {r.weight}</p>
+        {r.fired.length > 0 ? (
+          <ul className="mono text-ink">
+            {r.fired.map((f) => (
+              <li key={f}>{f}</li>
+            ))}
+          </ul>
+        ) : (
+          <p>No rule matched.</p>
+        )}
+      </div>
+    </details>
   );
 }
 
@@ -57,6 +88,7 @@ export function SourceTable({ report, pending }: Props) {
                         ))}
                       </span>
                     )}
+                    <Why r={r} />
                   </td>
                   <td className="px-3 py-2 text-right">
                     {r.link && (

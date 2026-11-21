@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { api } from "../api";
 import { ago, shortenMiddle } from "../lib/format";
 import type { Level } from "../model";
@@ -23,6 +23,24 @@ export function Overview({ onCheck }: { onCheck: (ioc: string) => void }) {
   const stats = useQuery({ queryKey: ["stats"], queryFn: () => api.stats(30) });
   const watch = useQuery({ queryKey: ["watchlist"], queryFn: api.watchlist });
   const feeds = useQuery({ queryKey: ["feeds"], queryFn: api.feeds });
+  const sched = useQuery({ queryKey: ["scheduler"], queryFn: api.scheduler });
+  const [importName, setImportName] = useState("");
+  const runJob = useMutation({
+    mutationFn: api.schedulerRun,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["scheduler"] });
+      void qc.invalidateQueries({ queryKey: ["watchlist"] });
+      void qc.invalidateQueries({ queryKey: ["feeds"] });
+    },
+  });
+  const importFeed = useMutation({
+    mutationFn: async (file: File) => api.feedsImport(importName.trim(), await file.text()),
+    onSuccess: () => {
+      setImportName("");
+      void qc.invalidateQueries({ queryKey: ["feeds"] });
+    },
+  });
+  const forget = useMutation({ mutationFn: api.feedsForget, onSuccess: (list) => qc.setQueryData(["feeds"], list) });
 
   const recheck = useMutation({
     mutationFn: api.recheck,
@@ -167,6 +185,38 @@ export function Overview({ onCheck }: { onCheck: (ioc: string) => void }) {
         )}
       </Panel>
 
+      <Panel title="Scheduler" label="Scheduler">
+        <p className="mb-3 text-xs text-muted">
+          Background jobs run only while verdikt ui is open and are off unless set in .env (VERDIKT_WATCH_EVERY_HOURS, VERDIKT_FEEDS_EVERY_HOURS).
+        </p>
+        <ul className="space-y-3">
+          {sched.data?.map((j) => (
+            <li key={j.name} className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+              <span className="mono w-14">{j.name}</span>
+              <span className="label">{j.every_hours > 0 ? `every ${j.every_hours} h` : "off"}</span>
+              <span className="text-xs text-muted">
+                {j.last_run ? `last ${ago(j.last_run)}: ${j.last_detail}` : "not run yet"}
+                {j.next_run && ` · next ${ago(j.next_run).replace(" ago", "")}`}
+              </span>
+              <button
+                type="button"
+                disabled={runJob.isPending}
+                onClick={() => runJob.mutate(j.name)}
+                aria-label={`Run the ${j.name} job now`}
+                className="ml-auto rounded border border-line-strong px-2.5 py-1 text-xs hover:border-accent disabled:opacity-50"
+              >
+                Run now
+              </button>
+            </li>
+          ))}
+        </ul>
+        {runJob.isError && (
+          <p role="alert" className="mt-2 text-xs text-malicious">
+            {runJob.error.message}
+          </p>
+        )}
+      </Panel>
+
       <Panel title="Local data feeds" label="Local feeds">
         <div className="mb-3 flex flex-wrap items-center gap-3">
           <button type="button" className={BTN} disabled={update.isPending} onClick={() => update.mutate()}>
@@ -181,14 +231,59 @@ export function Overview({ onCheck }: { onCheck: (ioc: string) => void }) {
         {feeds.data && feeds.data.length === 0 && <p className="text-sm text-muted">No feeds yet. Update them once to enable blocklists, top sites, KEV and EPSS.</p>}
         <ul className="mono space-y-1 text-xs">
           {feeds.data?.map((f) => (
-            <li key={f.name} className="flex justify-between gap-4">
+            <li key={f.name} className="flex items-center justify-between gap-4">
               <span>{f.name}</span>
               <span className="text-muted">
                 {f.count.toLocaleString()} entries · {ago(f.fetched_at)}
               </span>
+              {f.name.startsWith("import:") && (
+                <button
+                  type="button"
+                  onClick={() => forget.mutate(f.name.slice("import:".length))}
+                  aria-label={`Forget imported list ${f.name.slice("import:".length)}`}
+                  className="rounded border border-line px-2 py-0.5 text-[11px] hover:border-accent"
+                >
+                  Forget
+                </button>
+              )}
             </li>
           ))}
         </ul>
+        <div className="mt-4 space-y-2 border-t border-line pt-3">
+          <h3 className="label">Import MISP or STIX file</h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <label htmlFor="import-name" className="sr-only">
+              Name for the imported list
+            </label>
+            <input
+              id="import-name"
+              value={importName}
+              onChange={(e) => setImportName(e.target.value)}
+              placeholder="list-name"
+              className="mono w-40 border border-line-strong bg-bg px-2 py-1 text-xs outline-none focus:border-accent"
+            />
+            <label htmlFor="import-file" className="sr-only">
+              MISP event or STIX bundle file
+            </label>
+            <input
+              id="import-file"
+              type="file"
+              accept=".json,application/json"
+              disabled={!importName.trim() || importFeed.isPending}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) importFeed.mutate(file);
+                e.target.value = "";
+              }}
+              className="text-xs"
+            />
+          </div>
+          <p className="text-xs text-muted" role="status" aria-live="polite">
+            {importFeed.isSuccess && `Imported ${importFeed.data.count} indicator(s) from a ${importFeed.data.format} file as ${importFeed.data.name}.`}
+            {importFeed.isError && `Import failed: ${importFeed.error.message}`}
+            {!importFeed.isSuccess && !importFeed.isError && "Imported indicators count as blocklisted. MISP: only attributes marked to_ids."}
+          </p>
+        </div>
       </Panel>
     </div>
   );

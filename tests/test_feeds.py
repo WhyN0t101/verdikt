@@ -28,6 +28,7 @@ URLS = {
     feeds.DROP: "drop_v4.json",
     feeds.TOR: "tor.txt",
     feeds.TRANCO: "tranco.zip",
+    feeds.OPENPHISH: "openphish.txt",
     feeds.KEV: "kev.json",
     feeds.EPSS: "epss.csv.gz",
 }
@@ -97,6 +98,7 @@ async def test_update_downloads_parses_and_records_meta(
         "spamhaus_drop": (True, 3),
         "tor_exits": (True, 5),
         "tranco": (True, 6),
+        "openphish": (True, 6),
         "cisa_kev": (True, 3),
         "epss": (True, 6),
     }

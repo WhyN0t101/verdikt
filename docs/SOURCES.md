@@ -16,7 +16,10 @@ Each source lives in one file under `src/verdikt/sources/`. It maps the vendor r
 | `greynoise` | yes | | | | optional | 24 h | none | context, benign override |
 | `internetdb` | yes | | | | none | 7 d | none | context only |
 | `hashlookup` | | | | yes | none | 7 d | none | verdict (softens or flags) |
-| `localfeeds` | yes | yes | | | none | local | none | blocklist, Tor, top sites |
+| `localfeeds` | yes | yes | yes | yes | none | local | none | blocklists, OpenPhish, Tor, top sites, imported lists |
+| `rdap` | | yes | | | none | 7 d | none | verdict (weak): domain age |
+| `crtsh` | | yes | | | none | 24 h | none | context only, opt-in |
+| `passivedns` | yes | yes | | | VirusTotal | 24 h | shares VT's 500 | context only, opt-in |
 | `hybrid` | | | | yes | required | 7 d | 200 | verdict |
 
 "Context only" sources add data (ports, CVEs, hostnames) but never change the verdict. A source with a missing required key is disabled and is not queried.
@@ -31,11 +34,14 @@ Rule semantics: an integer means "metric is at least this value", a boolean mean
 | `abuseipdb` | `score`, `reports`, `tor` | MALICIOUS at `score >= 75`; SUSPICIOUS at `score >= 25` |
 | `urlscan` | `scans` | INFO row |
 | `threatfox` | `match`, `entries` | MALICIOUS when `match` is true |
-| `urlhaus` | `match`, `online`, `urls` | MALICIOUS when `online` is true. A listing with only offline URLs is not enough (a honeypot URL got `example.com` listed) |
+| `urlhaus` | `match`, `online`, `url_online`, `urls` | MALICIOUS when `url_online` (the exact URL is listed and online); SUSPICIOUS when the host has an online listed URL. A listing with only offline URLs is not enough |
 | `malwarebazaar` | `match` | MALICIOUS when `match` is true |
 | `otx` | `pulses` | INFO row. The pulse count includes every pulse that merely mentions the indicator and is capped at 50 (it was 50 for `example.com`) |
 | `greynoise` | `noise`, `riot` | INFO row; `riot` true downgrades SUSPICIOUS to SAFE |
 | `internetdb` | `ports`, `vulns`, `hostnames` | INFO row |
+| `rdap` | `age_days`, `expires_in_days` | SUSPICIOUS when `age_days__lt: 30` (a `__lt` key means less than) |
+| `crtsh` | `certs`, `names`, `oldest_days`, `newest_days` | INFO row; subdomains seen on certificates become related domains |
+| `passivedns` | `resolutions`, `flagged_neighbours` | INFO row; resolved IPs or pointing domains become related indicators |
 | `hashlookup` | `known_good`, `known_malicious` | SUSPICIOUS when `known_malicious`; `known_good` softens SUSPICIOUS to SAFE |
 | `localfeeds` | `blocklisted`, `tor_exit`, `top_site` | MALICIOUS when `blocklisted`; `top_site` (exact Tranco match) softens SUSPICIOUS to SAFE; `tor_exit` is a tag |
 | `hybrid` | `malicious`, `threat_score`, `reports` | SUSPICIOUS when `malicious` is true |
@@ -81,6 +87,14 @@ The abuse.ch v1 endpoints with the `Auth-Key` header are the ones implemented. a
 - **hashlookup** (CIRCL, keyless) is checked per hash. The real EICAR response carries `hashlookup:trust` 100 **and** a `KnownMalicious` flag, so trust is ignored and only the flag decides. A hit means "known file", not "benign": it can only soften a suspicious verdict, never a malicious one.
 - **CISA KEV and EPSS** are not sources: after the sources answer, the CVEs in InternetDB's `vulns` are looked up locally and attached to the report as `cves`, with a reason line when any is in KEV. They never change the verdict.
 - Feed URLs are in `src/verdikt/sources/feeds.py`. Downloads are capped at 40 MB each, one failing feed never stops the others or removes its old copy, and files are written atomically. Licenses differ per feed (Spamhaus DROP and Tranco have their own terms); check them before using verdikt commercially.
+
+## RDAP, crt.sh, passive DNS and OpenPhish
+
+- **rdap** asks `rdap.org`, which redirects to the registry's own RDAP server (only this request follows redirects). For `sub.a.example.com` it strips labels, at most three, until a registry answers, so no public-suffix list is needed. A TLD with no RDAP service gives `not found`. A young domain is a weak signal: weight 1, suspicious only.
+- **crtsh** queries unexpired certificates for the exact name. Responses for popular domains are large, so only a sample is kept as `raw`. It was 0.8 s for one domain, 13 s for `github.com` and a 20 s timeout for `example.com`, hence opt-in and a 20 s source timeout.
+- **passivedns** uses VirusTotal's `/resolutions` endpoint with the same key, limiter and daily budget as the VirusTotal source (`quota_group`), so enabling it can use up the 4/min and 500/day sooner.
+- **OpenPhish** (community feed, free for non-commercial use) is downloaded with the other feeds. A URL matches exactly (after normalization); a domain matches when it is the exact host of a listed URL, so `weeblysite.com` is not listed because `att-10page42.weeblysite.com` is.
+- **urlscan** stays context only. With a key, search still carries no verdicts, verdict fields cannot be searched on the free plan, and the result pages that do hold verdicts are 13 to 40 MB each, so a per-result source was not built.
 
 ## Recorded fixtures
 

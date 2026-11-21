@@ -1,4 +1,4 @@
-import type { Extraction, FeedInfo, FeedUpdate, FeedbackLabel, Report, ReportSummary, SourceInfo, Stats, WatchChange, WatchState } from "./model";
+import type { CaseDetail, CaseSummary, Extraction, FeedImport, JobStatus, FeedInfo, FeedUpdate, FeedbackLabel, Report, ReportSummary, SourceInfo, Stats, WatchChange, WatchState } from "./model";
 
 // The server injects a per-run token into the served page; the browser never sees API keys.
 function token(): string {
@@ -50,6 +50,24 @@ export const api = {
   feeds: () => call<FeedInfo[]>("/api/feeds"),
   feedsUpdate: () => call<FeedUpdate[]>("/api/feeds/update", { method: "POST" }),
   extract: (text: string) => call<Extraction>("/api/extract", { method: "POST", body: JSON.stringify({ text }) }),
+  cases: (tag?: string) => call<CaseSummary[]>(`/api/cases${tag ? `?tag=${encodeURIComponent(tag)}` : ""}`),
+  caseGet: (id: string) => call<CaseDetail>(`/api/cases/${encodeURIComponent(id)}`),
+  caseCreate: (title: string, tags: string[] = []) =>
+    call<CaseDetail>("/api/cases", { method: "POST", body: JSON.stringify({ title, tags }) }),
+  casePatch: (id: string, change: { title?: string; notes?: string; tags?: string[] }) =>
+    call<CaseDetail>(`/api/cases/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(change) }),
+  caseDelete: (id: string) => call<CaseSummary[]>(`/api/cases/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  caseAdd: (id: string, reportId: string) =>
+    call<CaseDetail>(`/api/cases/${encodeURIComponent(id)}/reports`, { method: "POST", body: JSON.stringify({ report_id: reportId }) }),
+  caseRemove: (id: string, reportId: string) =>
+    call<CaseDetail>(`/api/cases/${encodeURIComponent(id)}/reports/${encodeURIComponent(reportId)}`, { method: "DELETE" }),
+  scheduler: () => call<JobStatus[]>("/api/scheduler"),
+  schedulerRun: (name: string) => call<JobStatus>(`/api/scheduler/${encodeURIComponent(name)}/run`, { method: "POST" }),
+  feedsImport: (name: string, content: string) =>
+    call<FeedImport>("/api/feeds/import", { method: "POST", body: JSON.stringify({ name, content }) }),
+  feedsForget: (name: string) => call<FeedInfo[]>(`/api/feeds/import?name=${encodeURIComponent(name)}`, { method: "DELETE" }),
+  /** A file the API builds (report or case export, MISP event): text, fetched with the token header. */
+  download: async (path: string) => (await request(path)).text(),
   /** STIX bundle as text; the endpoint needs the token header, so a plain link cannot fetch it. */
   stix: async (id: string) => (await request(`/api/reports/${encodeURIComponent(id)}/stix`)).text(),
 };

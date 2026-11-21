@@ -25,9 +25,18 @@ from verdikt.config import Settings, get_settings
 from verdikt.detect import DetectError, detect
 from verdikt.engine import Engine, build_engine
 from verdikt.extract import MAX_ITEMS, extract_iocs
+from verdikt.misp import to_misp
 from verdikt.models import Level, Report, Status
 from verdikt.notify import Platform, notify
-from verdikt.sources.feeds import DEFAULT_TOP, FeedResult, feeds_status, update_feeds
+from verdikt.sources.feeds import (
+    DEFAULT_TOP,
+    FeedResult,
+    feeds_status,
+    forget_import,
+    register_import,
+    update_feeds,
+)
+from verdikt.sources.importers import ImportError_, parse_any, write_import
 from verdikt.stix import to_stix
 from verdikt.watch import WatchChange, recheck
 
@@ -140,6 +149,7 @@ def check(
     json: Annotated[bool, typer.Option("--json", help="Print the Report as JSON")] = False,
     raw: Annotated[bool, typer.Option("--raw", help="Keep vendor `raw` payloads")] = False,
     stix: Annotated[bool, typer.Option("--stix", help="Print a STIX 2.1 bundle instead")] = False,
+    misp: Annotated[bool, typer.Option("--misp", help="Print a MISP event JSON instead")] = False,
     no_cache: Annotated[bool, typer.Option("--no-cache", help="Bypass cached results")] = False,
     notify_to: Annotated[
         Platform | None, typer.Option("--notify", help="slack or telegram")
@@ -162,7 +172,9 @@ def check(
     except DetectError as exc:
         err.print(f"error: {exc}", markup=False)
         raise typer.Exit(1) from exc
-    if stix:
+    if misp:
+        sys.stdout.write(_json.dumps(to_misp(report), indent=2) + "\n")
+    elif stix:
         sys.stdout.write(_json.dumps(to_stix(report), indent=2) + "\n")
     else:
         _emit(report, json, raw)
@@ -310,6 +322,34 @@ def feeds_update(
         table.add_row(r.name, r.detail, f"{r.count:,}" if r.ok else "-")
     out.print(table)
     if not any(r.ok for r in results):
+        raise typer.Exit(1)
+
+
+@feeds_app.command("import")
+def feeds_import(
+    file: Annotated[Path, typer.Argument(exists=True, dir_okay=False, readable=True)],
+    name: Annotated[str, typer.Option("--name", help="Short name, e.g. misp-2026-11")],
+    all_attributes: Annotated[
+        bool, typer.Option("--all", help="MISP: include attributes without to_ids")
+    ] = False,
+) -> None:
+    """Import a MISP event file or STIX 2.1 bundle as a local blocklist."""
+    directory = get_settings().resolved_feeds_dir
+    try:
+        fmt, entries = parse_any(file.read_bytes(), all_attributes)
+        count = write_import(directory, name, fmt, entries)
+    except ImportError_ as exc:
+        err.print(f"error: {exc}", markup=False)
+        raise typer.Exit(1) from exc
+    register_import(directory, name, count)
+    out.print(f"imported {count:,} indicator(s) from {fmt} file as '{name}'", markup=False)
+
+
+@feeds_app.command("forget")
+def feeds_forget(name: Annotated[str, typer.Argument()]) -> None:
+    """Remove an imported list."""
+    if not forget_import(get_settings().resolved_feeds_dir, name):
+        err.print("no such imported list", markup=False)
         raise typer.Exit(1)
 
 

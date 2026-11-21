@@ -6,19 +6,21 @@ malicious:                      # any match -> MALICIOUS
   abuseipdb: {score: 75}
   threatfox: {match: true}
   malwarebazaar: {match: true}
-  urlhaus: {online: true}
+  urlhaus: {url_online: true}          # the exact URL is listed and online
 suspicious:                     # any match -> SUSPICIOUS
   virustotal: {malicious: 1, suspicious: 1}
   abuseipdb: {score: 25}
   hybrid: {malicious: true}
   hashlookup: {known_malicious: true}
+  urlhaus: {online: true}              # a host with an online listed URL: popular hosts have some
+  rdap: {age_days__lt: 30}            # registered in the last 30 days: weak, so weight 1
 benign_override:                # downgrade SUSPICIOUS -> SAFE; never touches MALICIOUS
   greynoise: {riot: true}
   hashlookup: {known_good: true}       # known file with no malicious flag
   localfeeds: {top_site: true}         # exact Tranco top-site match only
 # rows get INFO, never count toward min_sources_for_safe. OTX counts every pulse that merely
 # mentions an indicator (50 for example.com) and urlscan search carries no verdicts on the free plan.
-context_only: [internetdb, greynoise, otx, urlscan]
+context_only: [internetdb, greynoise, otx, urlscan, crtsh, passivedns]
 high_weight: [virustotal, threatfox, urlhaus, malwarebazaar]
 min_sources_for_safe: 2
 # feeds that only list known-bad items: "no match" is absence of evidence, not evidence of safety

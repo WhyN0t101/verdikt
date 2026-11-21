@@ -8,3 +8,6 @@ Every file here is JSON a source client parses. Never put keys, account data or 
 **Hand-made** from vendor documentation, not yet verified against a live response: everything else, including all Hybrid Analysis files, `urlhaus/url_hit`, `urlhaus/host_hit`, `threatfox/hit` (IP with port) and `threatfox/near_miss`, `virustotal/domain_hit`, `virustotal/ip_clean`, `otx/hit` and `otx/clean`, `abuseipdb/clean`, `greynoise/riot`, `urlscan/miss`, `malwarebazaar/hit`.
 
 To record a new one: run `verdikt check <ioc> --json --raw --no-cache`, take the `raw` of the source, trim it, scrub it, save it here, and list it above.
+
+Also recorded on 2026-11-21: `rdap/example_com`, `crtsh/example_com`, `passivedns/domain` and `passivedns/ip` (VirusTotal resolutions, trimmed) and `feeds/openphish.txt`. MISP import files in the tests are hand-written from MISP's documented event format.
+

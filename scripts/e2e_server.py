@@ -18,6 +18,7 @@ from verdikt.engine import Engine
 from verdikt.models import IOC, IOCType, RelatedIOC, SourceResult, Status
 from verdikt.sources import feeds
 from verdikt.sources.base import BaseSource, Gate, Source
+from verdikt.sources.feeds import LocalFeeds
 
 PORT = int(os.environ.get("VERDIKT_E2E_PORT", "8768"))
 TOKEN = "e2e-token"  # noqa: S105
@@ -112,9 +113,16 @@ def feeds_dir() -> Path:
 
 
 def main() -> None:
-    sources: list[Source] = [FakeVirusTotal(), FakeAbuseIPDB(), FakeFeed(), FakeInternetDB()]
+    fd = feeds_dir()
+    sources: list[Source] = [
+        FakeVirusTotal(),
+        FakeAbuseIPDB(),
+        FakeFeed(),
+        FakeInternetDB(),
+        LocalFeeds(fd),  # disabled until a feed (here: an imported MISP file) exists
+    ]
     engine = Engine(
-        Settings(_env_file=None, feeds_dir=feeds_dir()),  # pyright: ignore[reportCallIssue]
+        Settings(_env_file=None, feeds_dir=fd),  # pyright: ignore[reportCallIssue]
         load_rules(),
         Cache(":memory:"),
         httpx.AsyncClient(),

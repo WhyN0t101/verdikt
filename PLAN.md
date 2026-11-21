@@ -244,7 +244,7 @@ malicious:                      # any match -> MALICIOUS
   abuseipdb: {score: 75}
   threatfox: {match: true}
   malwarebazaar: {match: true}
-  urlhaus: {online: true}
+  urlhaus: {url_online: true}   # exact URL listed and online; a host listing is only suspicious
 suspicious:                     # any match -> SUSPICIOUS
   virustotal: {malicious: 1, suspicious: 1}
   abuseipdb: {score: 25}
@@ -483,4 +483,17 @@ Built in one pass at the user's request; each item is covered by tests and, for 
 | Tests | Playwright end to end against `scripts/e2e_server.py` | Fake sources, in-memory database, no network; runs in CI |
 
 Not built (ideas): MISP/OpenCTI import or push, saved investigations and notes, a built-in scheduler, per-result urlscan verdicts (needs a key), passive DNS and WHOIS/RDAP domain age.
+
+### 19b. Second batch
+
+| Area | What | Notes |
+|---|---|---|
+| Sources | `rdap` (domain age), `crtsh` (opt-in), `passivedns` (VirusTotal, opt-in), OpenPhish in `localfeeds` | New rule operator `metric__lt: N`. `Source` gained `timeout` and `quota_group` |
+| Verdict | URLhaus host listing is suspicious, exact URL listing is malicious | Found on real data: `github.com` was malicious |
+| Model | `SourceResult.fired/weight/role`; `schema_version` 4 | The UI "Why" panel |
+| Data | Cases (notes, tags, linked reports; reports in a case survive retention), MISP/STIX import as a local list | |
+| Output | Markdown and HTML report and case exports, MISP event JSON | Defanged, escaped, no script in HTML |
+| Runtime | In-process scheduler in `verdikt ui` for watchlist and feeds (off by default, min 1 h) | `/api/scheduler`, run-now |
+
+Not built: a urlscan per-result verdict source (result pages are 13 to 40 MB each and verdicts cannot be searched on the free plan), live MISP/OpenCTI push, a separate `verdikt daemon`.
 

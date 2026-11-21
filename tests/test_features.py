@@ -446,3 +446,37 @@ async def test_api_feedback_stix_and_audit(tmp_path: Path) -> None:
         json.loads(x) for x in (tmp_path / "audit.jsonl").read_text(encoding="utf-8").splitlines()
     ]
     assert [e["event"] for e in events] == ["check", "check", "feedback"]
+
+
+# --- per-source "why" ---------------------------------------------------------------------
+
+
+def test_rows_explain_themselves() -> None:
+    rows = [
+        row("virustotal", malicious=9, suspicious=0),
+        row("abuseipdb", score=0),
+        row("threatfox", match=False),
+        row("internetdb", ports=2),
+        row("virustotal", Status.ERROR),
+    ]
+    got = decide(rows, RULES).results
+    vt, ab, tf, idb, failed = got
+    assert vt.fired == ["malicious 9 >= 5 -> malicious"]
+    assert (vt.role, vt.weight) == ("strong", 3)
+    assert (ab.role, ab.weight, ab.fired) == ("weak", 2, [])
+    assert (tf.role, tf.weight) == ("feed", 0)  # "not listed" carries no weight
+    assert (idb.role, idb.weight) == ("context", 0)
+    assert (failed.role, failed.weight) == ("no answer", 0)
+
+
+def test_benign_override_is_recorded_on_the_row() -> None:
+    rows = [row("virustotal", malicious=1, suspicious=0), row("greynoise", riot=True)]
+    vt_row, noise = decide(rows, RULES).results
+    assert vt_row.fired == ["malicious 1 >= 1 -> suspicious"]
+    assert noise.fired == ["riot is true -> benign override (softens suspicious)"]
+
+
+def test_decide_does_not_mutate_its_input_rows() -> None:
+    rows = [row("virustotal", malicious=9, suspicious=0)]
+    decide(rows, RULES)
+    assert (rows[0].fired, rows[0].weight, rows[0].role) == ([], 0, "")

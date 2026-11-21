@@ -7,10 +7,15 @@ import sys
 from functools import lru_cache
 from importlib import resources
 from pathlib import Path
+from typing import Literal
 
 import yaml
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from verdikt.models import Level
+
+MIN_JOB_HOURS = 1.0
 
 
 class Rules(BaseModel):
@@ -62,6 +67,20 @@ class Settings(BaseSettings):
     report_retention_days: int = 90  # 0 keeps reports forever
     audit_log: Path | None = None
     feeds_dir: Path | None = None
+    watch_every_hours: float = 0  # 0 = off; otherwise at least MIN_JOB_HOURS
+    feeds_every_hours: float = 0
+    watch_notify: Literal["slack", "telegram"] | None = None
+    watch_min_level: Level = Level.SUSPICIOUS
+    crtsh: bool = False  # certificate transparency: slow (10 to 20 s) and often flaky
+    vt_resolutions: bool = False  # passive DNS from VirusTotal: costs one extra VT call per lookup
+
+    @field_validator("watch_every_hours", "feeds_every_hours")
+    @classmethod
+    def _interval(cls, value: float) -> float:
+        # every watchlist run spends source quota for up to 50 indicators
+        if value != 0 and value < MIN_JOB_HOURS:
+            raise ValueError(f"must be 0 (off) or at least {MIN_JOB_HOURS} hours")
+        return value
 
     @property
     def internal_domain_list(self) -> list[str]:

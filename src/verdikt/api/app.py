@@ -19,6 +19,9 @@ from pydantic import BaseModel, Field
 
 from verdikt.cache import (
     WATCHLIST_MAX,
+    CaseDetail,
+    CaseError,
+    CaseSummary,
     FeedbackEntry,
     ReportSummary,
     Stats,
@@ -28,9 +31,18 @@ from verdikt.cache import (
 from verdikt.config import get_settings
 from verdikt.detect import DetectError
 from verdikt.engine import Engine, SourceInfo, build_engine
+from verdikt.export import case_html, case_markdown, report_html, report_markdown
 from verdikt.extract import Extraction, extract_iocs
+from verdikt.misp import to_misp
 from verdikt.models import Model, Report
-from verdikt.sources.feeds import feeds_status, update_feeds
+from verdikt.scheduler import JOBS, JobStatus, Scheduler
+from verdikt.sources.feeds import (
+    feeds_status,
+    forget_import,
+    register_import,
+    update_feeds,
+)
+from verdikt.sources.importers import NAME, ImportError_, parse_any, write_import
 from verdikt.stix import to_stix
 from verdikt.watch import WatchChange, recheck
 
@@ -54,6 +66,18 @@ CSP = (
 )
 
 
+class CaseCreate(BaseModel):
+    title: str
+    notes: str = ""
+    tags: list[str] = Field(default_factory=list[str])
+
+
+class CaseUpdate(BaseModel):
+    title: str | None = None
+    notes: str | None = None
+    tags: list[str] | None = None
+
+
 class WatchRequest(BaseModel):
     report_id: str
 
@@ -71,6 +95,18 @@ class FeedInfo(Model):
     name: str
     count: int
     fetched_at: str
+
+
+class FeedImportRequest(BaseModel):
+    name: str
+    content: str = Field(max_length=10_000_000)
+    all_attributes: bool = False
+
+
+class FeedImport(Model):
+    name: str
+    format: str
+    count: int
 
 
 class FeedUpdate(Model):
@@ -121,15 +157,27 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         if engine is not None:
             app.state.engine = engine
-            yield
+            async with _scheduled(app, engine):
+                yield
             return
         async with httpx.AsyncClient(follow_redirects=False) as http:
             built = build_engine(get_settings(), http)
             app.state.engine = built
             try:
-                yield
+                async with _scheduled(app, built):
+                    yield
             finally:
                 built.cache.close()
+
+    @asynccontextmanager
+    async def _scheduled(app: FastAPI, eng: Engine) -> AsyncGenerator[None]:
+        scheduler = Scheduler(eng, eng.settings)
+        app.state.scheduler = scheduler
+        scheduler.start()
+        try:
+            yield
+        finally:
+            await scheduler.stop()
 
     app = FastAPI(title="verdikt", lifespan=lifespan, docs_url=None, redoc_url=None)
     if engine is not None:
@@ -194,6 +242,13 @@ def create_app(
             raise HTTPException(status_code=404, detail="report not found")
         return JSONResponse(to_stix(found), media_type="application/stix+json")
 
+    @app.get("/api/reports/{report_id}/misp")
+    async def report_misp(report_id: str, engine: EngineDep) -> JSONResponse:
+        found = engine.cache.get_report(report_id)
+        if found is None:
+            raise HTTPException(status_code=404, detail="report not found")
+        return JSONResponse(to_misp(found))
+
     @app.post("/api/reports/{report_id}/feedback", response_model=FeedbackEntry)
     async def add_feedback(
         report_id: str, body: FeedbackRequest, engine: EngineDep
@@ -209,6 +264,101 @@ def create_app(
     @app.get("/api/feedback", response_model=list[FeedbackEntry])
     async def feedback(engine: EngineDep) -> list[FeedbackEntry]:
         return engine.cache.list_feedback()
+
+    def _export(kind: str, text_md: str, text_html: str, fmt: str, stem: str) -> Response:
+        if fmt == "html":
+            body, media, ext = text_html, "text/html; charset=utf-8", "html"
+        else:
+            body, media, ext = text_md, "text/markdown; charset=utf-8", "md"
+        return Response(
+            body,
+            media_type=media,
+            headers={"Content-Disposition": f'attachment; filename="verdikt-{kind}-{stem}.{ext}"'},
+        )
+
+    @app.get("/api/reports/{report_id}/export")
+    async def report_export(
+        report_id: str,
+        engine: EngineDep,
+        fmt: Annotated[Literal["md", "html"], Query(alias="format")] = "md",
+    ) -> Response:
+        found = engine.cache.get_report(report_id)
+        if found is None:
+            raise HTTPException(status_code=404, detail="report not found")
+        shown = found.without_raw()
+        return _export("report", report_markdown(shown), report_html(shown), fmt, report_id[:8])
+
+    @app.get("/api/cases", response_model=list[CaseSummary])
+    async def cases(engine: EngineDep, tag: str | None = None) -> list[CaseSummary]:
+        return engine.cache.case_list(tag)
+
+    @app.post("/api/cases", response_model=CaseDetail)
+    async def case_create(body: CaseCreate, engine: EngineDep) -> CaseDetail:
+        try:
+            case_id = engine.cache.case_create(body.title, body.notes, body.tags)
+        except CaseError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return _case(engine, case_id)
+
+    def _case(engine: Engine, case_id: str) -> CaseDetail:
+        found = engine.cache.case_get(case_id)
+        if found is None:
+            raise HTTPException(status_code=404, detail="case not found")
+        return found
+
+    @app.get("/api/cases/{case_id}", response_model=CaseDetail)
+    async def case_get(case_id: str, engine: EngineDep) -> CaseDetail:
+        return _case(engine, case_id)
+
+    @app.patch("/api/cases/{case_id}", response_model=CaseDetail)
+    async def case_update(case_id: str, body: CaseUpdate, engine: EngineDep) -> CaseDetail:
+        try:
+            ok = engine.cache.case_update(case_id, body.title, body.notes, body.tags)
+        except CaseError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        if not ok:
+            raise HTTPException(status_code=404, detail="case not found")
+        return _case(engine, case_id)
+
+    @app.delete("/api/cases/{case_id}", response_model=list[CaseSummary])
+    async def case_delete(case_id: str, engine: EngineDep) -> list[CaseSummary]:
+        engine.cache.case_delete(case_id)
+        return engine.cache.case_list()
+
+    @app.post("/api/cases/{case_id}/reports", response_model=CaseDetail)
+    async def case_add(case_id: str, body: WatchRequest, engine: EngineDep) -> CaseDetail:
+        if not engine.cache.case_add_report(case_id, body.report_id):
+            raise HTTPException(status_code=404, detail="case or report not found")
+        return _case(engine, case_id)
+
+    @app.delete("/api/cases/{case_id}/reports/{report_id}", response_model=CaseDetail)
+    async def case_remove(case_id: str, report_id: str, engine: EngineDep) -> CaseDetail:
+        engine.cache.case_remove_report(case_id, report_id)
+        return _case(engine, case_id)
+
+    @app.get("/api/cases/{case_id}/export")
+    async def case_export(
+        case_id: str,
+        engine: EngineDep,
+        fmt: Annotated[Literal["md", "html"], Query(alias="format")] = "md",
+    ) -> Response:
+        case = _case(engine, case_id)
+        reports = [r.without_raw() for s in case.reports if (r := engine.cache.get_report(s.id))]
+        return _export(
+            "case", case_markdown(case, reports), case_html(case, reports), fmt, case_id[:8]
+        )
+
+    @app.get("/api/scheduler", response_model=list[JobStatus])
+    async def scheduler_status(request: Request) -> list[JobStatus]:
+        sched: Scheduler = request.app.state.scheduler
+        return sched.status()
+
+    @app.post("/api/scheduler/{name}/run", response_model=JobStatus)
+    async def scheduler_run(name: str, request: Request) -> JobStatus:
+        if name not in JOBS:
+            raise HTTPException(status_code=404, detail="no such job")
+        sched: Scheduler = request.app.state.scheduler
+        return await sched.run(name)
 
     @app.get("/api/stats", response_model=Stats)
     async def stats(engine: EngineDep, days: Annotated[int, Query(ge=1, le=90)] = 30) -> Stats:
@@ -250,6 +400,24 @@ def create_app(
     async def feeds_refresh(engine: EngineDep) -> list[FeedUpdate]:
         results = await update_feeds(engine.http, engine.settings.resolved_feeds_dir)
         return [FeedUpdate(name=r.name, ok=r.ok, count=r.count, detail=r.detail) for r in results]
+
+    @app.post("/api/feeds/import", response_model=FeedImport)
+    async def feeds_import(body: FeedImportRequest, engine: EngineDep) -> FeedImport:
+        directory = engine.settings.resolved_feeds_dir
+        try:
+            fmt, entries = parse_any(body.content.encode("utf-8"), body.all_attributes)
+            count = write_import(directory, body.name, fmt, entries)
+        except ImportError_ as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        register_import(directory, body.name, count)
+        return FeedImport(name=body.name, format=fmt, count=count)
+
+    @app.delete("/api/feeds/import", response_model=list[FeedInfo])
+    async def feeds_forget(name: str, engine: EngineDep) -> list[FeedInfo]:
+        if not NAME.match(name):
+            raise HTTPException(status_code=422, detail="invalid list name")
+        forget_import(engine.settings.resolved_feeds_dir, name)
+        return await feeds_info(engine)
 
     @app.post("/api/extract", response_model=Extraction)
     async def extract(body: ExtractRequest, engine: EngineDep) -> Extraction:

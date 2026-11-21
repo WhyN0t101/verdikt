@@ -148,7 +148,7 @@ test("pages are served with a strict CSP and the token is injected", async ({ pa
   expect(await page.locator('meta[name="verdikt-token"]').getAttribute("content")).toBe("e2e-token");
 });
 
-async function goto(page: Page, view: "Check" | "Overview" | "Batch") {
+async function goto(page: Page, view: "Check" | "Overview" | "Batch" | "Cases") {
   await page.getByRole("navigation", { name: "Views" }).getByRole("button", { name: view }).click();
 }
 
@@ -245,4 +245,96 @@ test("batch: text with no indicators says so", async ({ page }) => {
   await page.getByLabel("Text containing indicators").fill("nothing to see here");
   await page.getByRole("button", { name: "Extract indicators" }).click();
   await expect(page.getByRole("region", { name: "Batch results" })).toContainText("No indicators found");
+});
+
+test("each source row explains why it counted the way it did", async ({ page }) => {
+  await page.goto("/");
+  await check(page, BAD_IP);
+  const sources = page.getByRole("region", { name: "Sources" });
+  const vt = sources.getByRole("row", { name: /virustotal/ });
+  await vt.getByText("Why").click();
+  await expect(vt).toContainText("Strong source");
+  await expect(vt).toContainText("Weight in confidence: 3");
+  await expect(vt).toContainText("malicious 20 >= 5 -> malicious");
+  const feed = sources.getByRole("row", { name: /threatfox/ });
+  await feed.getByText("Why").click();
+  await expect(feed).toContainText("List-only feed");
+  await expect(feed).toContainText("No rule matched.");
+});
+
+test("cases: create from a report, edit notes and tags, export, reopen the report", async ({ page }) => {
+  await page.goto("/");
+  await check(page, BAD_IP);
+  await page.getByRole("button", { name: "New case" }).click();
+  await expect(page.getByText("Case created with this report.")).toBeVisible();
+
+  await goto(page, "Cases");
+  const list = page.getByRole("region", { name: "Cases", exact: true });
+  await list.getByRole("button", { name: new RegExp(`Investigation: ${BAD_IP.replaceAll(".", "\.")}`) }).first().click();
+  const detail = page.getByRole("region", { name: "Case detail" });
+  await detail.getByLabel("Notes").fill("Seen first in the proxy logs at 09:00.");
+  await detail.getByLabel("Tags (comma separated)").fill("Phishing, q4");
+  await detail.getByRole("button", { name: "Save case" }).click();
+  await expect(detail.getByText("Case saved.")).toBeVisible();
+  await expect(list.getByRole("button", { name: "phishing", exact: true })).toBeVisible(); // tag chips are lower-cased
+
+  const download = page.waitForEvent("download");
+  await detail.getByRole("button", { name: "Export Markdown" }).click();
+  const file = await download;
+  expect(file.suggestedFilename()).toMatch(/^verdikt-case-[0-9a-f]{8}\.md$/);
+  const md = await (await import("node:fs/promises")).readFile((await file.path()) ?? "", "utf-8");
+  expect(md).toContain("# Investigation:");
+  expect(md).toContain("Seen first in the proxy logs");
+  expect(md).toContain("185[.]220[.]101[.]4"); // defanged for sharing
+
+  await detail.getByRole("button", { name: `Open report for ${BAD_IP}` }).click();
+  await expect(page.getByRole("region", { name: "Verdict" })).toContainText(BAD_IP);
+});
+
+test("a report can be exported as MISP, Markdown and HTML", async ({ page }) => {
+  await page.goto("/");
+  await check(page, BAD_IP);
+  const read = async (label: string) => {
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: label, exact: true }).click();
+    const file = await download;
+    return { name: file.suggestedFilename(), text: await (await import("node:fs/promises")).readFile((await file.path()) ?? "", "utf-8") };
+  };
+  const misp = await read("Export MISP");
+  expect(misp.name).toMatch(/\.misp\.json$/);
+  expect(JSON.parse(misp.text).Event.Attribute[0].value).toBe(BAD_IP);
+  const md = await read("Report (Markdown)");
+  expect(md.text).toContain("MALICIOUS: 185[.]220[.]101[.]4");
+  const html = await read("Report (HTML)");
+  expect(html.text).toContain("<!doctype html>");
+  expect(html.text).not.toMatch(/<script/i);
+});
+
+test("scheduler panel shows jobs and runs one on demand", async ({ page }) => {
+  await page.goto("/");
+  await goto(page, "Overview");
+  const panel = page.getByRole("region", { name: "Scheduler" });
+  await expect(panel).toContainText("watch");
+  await expect(panel).toContainText("off"); // nothing is scheduled by default
+  await panel.getByRole("button", { name: "Run the watch job now" }).click();
+  await expect(panel).toContainText("0 verdict change(s)");
+});
+
+test("import a MISP file as a local list and forget it again", async ({ page }) => {
+  await page.goto("/");
+  await goto(page, "Overview");
+  const feeds = page.getByRole("region", { name: "Local feeds" });
+  await feeds.getByLabel("Name for the imported list").fill("case-1");
+  const misp = { Event: { Attribute: [{ type: "ip-dst", value: "91.92.109.10", to_ids: true }, { type: "ip-dst", value: "8.8.4.4", to_ids: false }] } };
+  await feeds.getByLabel("MISP event or STIX bundle file").setInputFiles({ name: "event.json", mimeType: "application/json", buffer: Buffer.from(JSON.stringify(misp)) });
+  await expect(feeds).toContainText("Imported 1 indicator(s) from a misp file as case-1.");
+  await expect(feeds).toContainText("import:case-1");
+
+  await goto(page, "Check");
+  await check(page, "91.92.109.10");
+  await expect(page.getByRole("region", { name: "Verdict" })).toContainText("Malicious"); // blocklisted locally
+
+  await goto(page, "Overview");
+  await feeds.getByRole("button", { name: "Forget imported list case-1" }).click();
+  await expect(feeds).not.toContainText("import:case-1");
 });

@@ -24,10 +24,16 @@ def _fired(metrics: dict[str, int | bool], condition: Condition) -> list[str]:
     """Describe each metric that satisfies `condition` (keys are OR'ed)."""
     hits: list[str] = []
     for key, want in condition.items():
-        have = metrics.get(key)
+        # `metric__lt: N` means metric < N (the plain form is metric >= N)
+        below = key.endswith("__lt")
+        name = key.removesuffix("__lt")
+        have = metrics.get(name)
         if have is None:
             continue
-        if isinstance(want, bool):
+        if below:
+            if not isinstance(have, bool) and not isinstance(want, bool) and have < want:
+                hits.append(f"{name} {have} < {want}")
+        elif isinstance(want, bool):
             if isinstance(have, bool) and have is want:
                 hits.append(f"{key} is {str(have).lower()}")
         elif not isinstance(have, bool) and have >= want:
@@ -40,16 +46,28 @@ def _match(rules: dict[str, Condition], row: SourceResult) -> list[str]:
     return _fired(row.metrics, condition) if condition else []
 
 
+def _weight(row: SourceResult, rules: Rules) -> int:
+    if row.status is not Status.OK or row.level is Level.INFO:
+        return 0
+    if row.source in rules.listing_feeds and row.level is Level.SAFE:
+        return 0  # "not listed" says nothing about an indicator that is bad but unlisted
+    return rules.weights.get(row.source, rules.default_weight)
+
+
+def _role(row: SourceResult, rules: Rules) -> str:
+    if row.status is not Status.OK:
+        return "no answer"
+    if row.source in rules.context_only:
+        return "context"
+    if row.source in rules.listing_feeds:
+        return "feed"
+    return "strong" if row.source in rules.high_weight else "weak"
+
+
 def _confidence(verdict_rows: list[SourceResult], final: Level, rules: Rules) -> Confidence:
     """Weighted agreement with the final level; conflicting evidence at least as heavy -> low."""
-
-    def weight(row: SourceResult) -> int:
-        if row.source in rules.listing_feeds and row.level is Level.SAFE:
-            return 0  # "not listed" says nothing about an indicator that is bad but unlisted
-        return rules.weights.get(row.source, rules.default_weight)
-
-    agree = sum(weight(r) for r in verdict_rows if r.level is final)
-    against = sum(weight(r) for r in verdict_rows if r.level is not final)
+    agree = sum(_weight(r, rules) for r in verdict_rows if r.level is final)
+    against = sum(_weight(r, rules) for r in verdict_rows if r.level is not final)
     if final is Level.UNKNOWN or against >= agree:
         return Confidence.LOW
     if agree >= rules.confidence_high:
@@ -66,6 +84,7 @@ def decide(results: list[SourceResult], rules: Rules) -> Decision:
 
     for row in results:
         level = Level.UNKNOWN
+        fired: list[str] = []
         if row.status is Status.OK:
             if row.source in rules.context_only:
                 level = Level.INFO
@@ -74,15 +93,17 @@ def decide(results: list[SourceResult], rules: Rules) -> Decision:
                 sus = _match(rules.suspicious, row)
                 if mal:
                     level = Level.MALICIOUS
+                    fired = [f"{h} -> malicious" for h in mal]
                     malicious_rows += 1
                     reasons.append(f"{row.source}: {'; '.join(mal)} -> malicious")
                 elif sus:
                     level = Level.SUSPICIOUS
+                    fired = [f"{h} -> suspicious" for h in sus]
                     suspicious_rows += 1
                     reasons.append(f"{row.source}: {'; '.join(sus)} -> suspicious")
                 else:
                     level = Level.SAFE
-        new = row.model_copy(update={"level": level})
+        new = row.model_copy(update={"level": level, "fired": fired})
         rows.append(new)
         if new.status is Status.OK and level is not Level.INFO:
             verdict_rows.append(new)
@@ -141,6 +162,11 @@ def decide(results: list[SourceResult], rules: Rules) -> Decision:
                     f"need {rules.min_sources_for_safe}"
                 )
 
+    for r in rows:
+        if r.status is Status.OK and (hit := _match(rules.benign_override, r)):
+            r.fired = [*r.fired, *(f"{h} -> benign override (softens suspicious)" for h in hit)]
+        r.weight = _weight(r, rules)
+        r.role = _role(r, rules)
     agreeing = sum(1 for r in verdict_rows if r.level is final)
     confidence = _confidence(verdict_rows, final, rules)
     return Decision(final, agreeing, len(verdict_rows), confidence, reasons, rows)

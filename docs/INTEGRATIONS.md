@@ -69,6 +69,12 @@ On Windows use Task Scheduler with the same commands. A watchlist re-check skips
 - **SIEM:** tail the JSON-lines audit log (`audit.jsonl`, see the README) with any log shipper. Events are one per check and one per analyst feedback, carry the defanged indicator and the verdict, and contain no keys, raw vendor data or feed text. Alert on `level` and `confidence` in your SIEM rules.
 - **STIX:** `verdikt check <ioc> --stix` or `GET /api/reports/{id}/stix` gives a STIX 2.1 bundle (identity, indicator, malware families with `indicates` relationships) to load into a TIP or MISP-style platform. It is plain JSON and has not been validated against a TIP.
 
+## MISP and OpenCTI
+
+- **MISP out:** `verdikt check <ioc> --misp` or `GET /api/reports/{id}/misp` gives an event JSON (Event, Attribute, Tag) that you import into MISP with its UI or API. `to_ids` is set only on the main indicator of a malicious or suspicious report; related indicators are added with `to_ids` false; `distribution` is 0. The format was not validated against a live MISP.
+- **MISP and STIX in:** `verdikt feeds import <file> --name <name>` turns a MISP event file (or a STIX 2.1 bundle, for example exported from OpenCTI) into a local blocklist, matched with no lookup. MISP attributes need `to_ids` set unless you pass `--all`.
+- **OpenCTI out:** load the STIX bundle from `verdikt check <ioc> --stix` into OpenCTI. There is no live push to MISP or OpenCTI, because there was no instance to test against.
+
 ## Planned seams
 
 These are built into the structure but not yet features: third-party sources through a `verdikt.sources` entry-point group, a user `rules.yaml` override (available now through `VERDIKT_RULES_PATH`), notifier plugins (Discord, Teams, email), theme swaps through `web/src/styles/tokens.css`, and independent UI panels for a dashboard layout.

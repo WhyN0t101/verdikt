@@ -163,7 +163,7 @@ HITS = [
         "POST",
         "https://urlhaus-api.abuse.ch/v1/host/",
         ("urlhaus", "host_hit"),
-        {"match": True, "online": True, "urls": 3},
+        {"match": True, "online": True, "url_online": False, "urls": 3},
     ),
     Case(
         URLhaus("k"),
@@ -179,7 +179,7 @@ HITS = [
         "POST",
         "https://urlhaus-api.abuse.ch/v1/url/",
         ("urlhaus", "url_hit"),
-        {"match": True, "online": True},
+        {"match": True, "online": True, "url_online": True},
     ),
     Case(
         URLhaus("k"),

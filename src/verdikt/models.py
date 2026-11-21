@@ -8,7 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
-SCHEMA_VERSION = 3  # 2: confidence, seen_before. 3: cves
+SCHEMA_VERSION = 4  # 2: confidence, seen_before. 3: cves. 4: SourceResult fired/weight/role
 
 
 class IOCType(StrEnum):
@@ -92,6 +92,10 @@ class SourceResult(Model):
     cached: bool = False
     started_ms: int = 0  # offset from the start of the check; set by the engine
     duration_ms: int = 0  # 0 for a cache hit
+    # set by verdict.decide(): why this row counted the way it did
+    fired: list[str] = Field(default_factory=list[str])  # rules that matched
+    weight: int = 0  # evidence weight in the confidence score (0 = none)
+    role: str = ""  # strong | weak | feed | context | no answer
     fetched_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     raw: dict[str, Any] | None = None  # the one allowed Any: arbitrary vendor JSON
 

@@ -59,7 +59,14 @@ class URLhaus(BaseSource):
             Status.OK,
             f"listed ({urls} URL{'s' if urls != 1 else ''}, {'online' if online else 'offline'})"
             + (f": {threat}" if threat else ""),
-            metrics={"match": True, "online": online, "urls": urls},
+            # a host listing says little about a popular host (github.com has online malware URLs);
+            # only an exact URL match is strong enough for MALICIOUS
+            metrics={
+                "match": True,
+                "online": online,
+                "url_online": online and is_url,
+                "urls": urls,
+            },
             tags=tags[:10],
             link=link,
             raw=body,

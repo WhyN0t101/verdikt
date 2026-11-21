@@ -1,0 +1,104 @@
+{
+  "meta": {
+    "count": 49,
+    "cursor": "x"
+  },
+  "data": [
+    {
+      "id": "8.47.69.10example.com",
+      "type": "resolution",
+      "attributes": {
+        "ip_address": "8.47.69.10",
+        "host_name_last_analysis_stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 32,
+          "harmless": 60,
+          "timeout": 0
+        },
+        "resolver": "CAPE Sandbox",
+        "date": 1794646560,
+        "ip_address_last_analysis_stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 62,
+          "harmless": 30,
+          "timeout": 0
+        },
+        "host_name": "example.com"
+      }
+    },
+    {
+      "id": "8.6.112.10example.com",
+      "type": "resolution",
+      "attributes": {
+        "ip_address": "8.6.112.10",
+        "host_name_last_analysis_stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 32,
+          "harmless": 60,
+          "timeout": 0
+        },
+        "resolver": "CAPE Sandbox",
+        "date": 1794646560,
+        "ip_address_last_analysis_stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 39,
+          "harmless": 53,
+          "timeout": 0
+        },
+        "host_name": "example.com"
+      }
+    },
+    {
+      "id": "8.47.69.5example.com",
+      "type": "resolution",
+      "attributes": {
+        "ip_address": "8.47.69.5",
+        "host_name_last_analysis_stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 32,
+          "harmless": 60,
+          "timeout": 0
+        },
+        "resolver": "CAPE Sandbox",
+        "date": 1791826907,
+        "ip_address_last_analysis_stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 38,
+          "harmless": 54,
+          "timeout": 0
+        },
+        "host_name": "example.com"
+      }
+    },
+    {
+      "id": "8.6.112.5example.com",
+      "type": "resolution",
+      "attributes": {
+        "ip_address": "8.6.112.5",
+        "host_name_last_analysis_stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 32,
+          "harmless": 60,
+          "timeout": 0
+        },
+        "resolver": "CAPE Sandbox",
+        "date": 1791826907,
+        "ip_address_last_analysis_stats": {
+          "malicious": 0,
+          "suspicious": 0,
+          "undetected": 39,
+          "harmless": 53,
+          "timeout": 0
+        },
+        "host_name": "example.com"
+      }
+    }
+  ]
+}

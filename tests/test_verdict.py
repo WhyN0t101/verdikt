@@ -25,7 +25,25 @@ CASES: list[tuple[str, list[SourceResult], Level]] = [
     ("abuseipdb 75", [row("abuseipdb", score=75)], Level.MALICIOUS),
     ("abuseipdb 25", [row("abuseipdb", score=25)], Level.SUSPICIOUS),
     ("threatfox match", [row("threatfox", match=True)], Level.MALICIOUS),
-    ("urlhaus online", [row("urlhaus", match=True, online=True)], Level.MALICIOUS),
+    (
+        "urlhaus exact URL online",
+        [row("urlhaus", match=True, online=True, url_online=True)],
+        Level.MALICIOUS,
+    ),
+    (
+        "urlhaus host online is only suspicious",
+        [row("urlhaus", match=True, online=True, url_online=False)],
+        Level.SUSPICIOUS,
+    ),
+    (
+        "top site softens a host-level urlhaus listing (github.com)",
+        [
+            row("urlhaus", match=True, online=True, url_online=False),
+            row("localfeeds", blocklisted=False, tor_exit=False, top_site=True),
+            row("virustotal", malicious=0, suspicious=0),
+        ],
+        Level.SAFE,
+    ),
     ("offline listing is not enough", [row("urlhaus", match=True, online=False), vt()], Level.SAFE),
     (
         "otx pulses never decide",

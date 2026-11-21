@@ -133,6 +133,10 @@ class Source(Protocol):
     @property
     def daily_budget(self) -> int | None: ...
     @property
+    def timeout(self) -> float: ...
+    @property
+    def quota_group(self) -> str | None: ...  # share another source's limiter and budget
+    @property
     def enabled(self) -> bool: ...
 
     async def query(self, ioc: IOC, http: Gate) -> SourceResult: ...
@@ -147,6 +151,8 @@ class BaseSource:
     rate: tuple[int, float] = (1, 1.0)
     ttl: timedelta = timedelta(hours=6)
     daily_budget: int | None = None
+    timeout: float = TIMEOUT
+    quota_group: str | None = None
 
     def __init__(self, api_key: str | None = None) -> None:
         self._key = api_key

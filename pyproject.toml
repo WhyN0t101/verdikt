@@ -52,6 +52,7 @@ select = ["E", "F", "I", "UP", "B", "ASYNC", "S", "RUF"]
 ignore = ["S101"]
 
 [tool.ruff.lint.per-file-ignores]
+"src/verdikt/export.py" = ["E501"]  # HTML templates read better on one line
 "tests/**" = ["S105", "S106", "S108"]
 
 [tool.pyright]

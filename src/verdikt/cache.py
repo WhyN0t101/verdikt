@@ -5,11 +5,15 @@ Own table (not an HTTP cache) because abuse.ch APIs use POST. `raw` is always st
 
 from __future__ import annotations
 
+import json
+import re
 import sqlite3
 import threading
+import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from pydantic import ValidationError
 
@@ -45,6 +49,12 @@ CREATE TABLE IF NOT EXISTS watchlist (
 CREATE TABLE IF NOT EXISTS watch_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT, ioc TEXT NOT NULL, from_level TEXT NOT NULL,
   to_level TEXT NOT NULL, at TEXT NOT NULL, report_id TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS cases (
+  id TEXT PRIMARY KEY, title TEXT NOT NULL, notes TEXT NOT NULL DEFAULT '',
+  tags TEXT NOT NULL DEFAULT '[]', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS case_reports (
+  case_id TEXT NOT NULL, report_id TEXT NOT NULL, added_at TEXT NOT NULL,
+  PRIMARY KEY (case_id, report_id));
 CREATE TABLE IF NOT EXISTS budget (
   source TEXT NOT NULL, day TEXT NOT NULL, used INTEGER NOT NULL,
   PRIMARY KEY (source, day));
@@ -57,6 +67,9 @@ FEEDBACK_LABELS = ("false_positive", "false_negative", "correct")
 _CORRELATE_MAX = 10
 WATCHLIST_MAX = 50  # a re-check spends quota for every entry
 STATS_KEEP = timedelta(days=90)
+CASE_TITLE_MAX = 120
+CASE_NOTES_MAX = 20_000
+CASE_MAX_TAGS = 10
 _NO_LIMIT = 2**62  # sqlite INTEGER max is 2**63 - 1
 
 
@@ -141,6 +154,40 @@ class WatchEvent(Model):
     report_id: str
 
 
+class CaseSummary(Model):
+    id: str
+    title: str
+    tags: list[str]
+    created_at: datetime
+    updated_at: datetime
+    report_count: int
+
+
+class CaseDetail(CaseSummary):
+    notes: str
+    reports: list[ReportSummary]
+
+
+class CaseError(ValueError):
+    """Invalid case input (title, notes or tags)."""
+
+
+_TAG = re.compile(r"^[a-z0-9][a-z0-9 _:.-]{0,29}$")
+
+
+def clean_tags(tags: list[str]) -> list[str]:
+    out: list[str] = []
+    for t in tags:
+        t = t.strip().lower()
+        if not _TAG.match(t):
+            raise CaseError(f"invalid tag {t!r}: 1 to 30 characters of a-z, 0-9, space, _ : . -")
+        if t not in out:
+            out.append(t)
+    if len(out) > CASE_MAX_TAGS:
+        raise CaseError(f"at most {CASE_MAX_TAGS} tags")
+    return out
+
+
 class Cache:
     def __init__(
         self,
@@ -169,7 +216,11 @@ class Cache:
         with self._db:
             if self._retention is not None:
                 cutoff = (now - self._retention).isoformat()
-                cur = self._db.execute("DELETE FROM reports WHERE created_at < ?", (cutoff,))
+                cur = self._db.execute(
+                    "DELETE FROM reports WHERE created_at < ? "
+                    "AND id NOT IN (SELECT report_id FROM case_reports)",
+                    (cutoff,),
+                )
                 counts["reports"] = cur.rowcount
             self._db.execute(
                 "DELETE FROM ioc_index WHERE report_id NOT IN (SELECT id FROM reports)"
@@ -335,6 +386,131 @@ class Cache:
                 "SELECT DISTINCT ioc FROM reports WHERE created_at >= ?", (cutoff,)
             ).fetchall()
         return {str(r[0]) for r in rows}
+
+    # --- investigations (cases) ---------------------------------------------------------
+    def _case_row(self, case_id: str) -> tuple[Any, ...] | None:
+        row: tuple[Any, ...] | None = self._db.execute(
+            "SELECT id, title, notes, tags, created_at, updated_at FROM cases WHERE id=?",
+            (case_id,),
+        ).fetchone()
+        return row
+
+    def case_create(self, title: str, notes: str = "", tags: list[str] | None = None) -> str:
+        title = title.strip()
+        if not title or len(title) > CASE_TITLE_MAX:
+            raise CaseError(f"title must be 1 to {CASE_TITLE_MAX} characters")
+        if len(notes) > CASE_NOTES_MAX:
+            raise CaseError(f"notes are limited to {CASE_NOTES_MAX} characters")
+        cleaned = clean_tags(tags or [])
+        case_id = uuid.uuid4().hex
+        now = self._clock().isoformat()
+        with self._lock, self._db:
+            self._db.execute(
+                "INSERT INTO cases (id, title, notes, tags, created_at, updated_at) "
+                "VALUES (?,?,?,?,?,?)",
+                (case_id, title, notes, json.dumps(cleaned), now, now),
+            )
+        return case_id
+
+    def case_update(
+        self,
+        case_id: str,
+        title: str | None = None,
+        notes: str | None = None,
+        tags: list[str] | None = None,
+    ) -> bool:
+        if title is not None and (not title.strip() or len(title.strip()) > CASE_TITLE_MAX):
+            raise CaseError(f"title must be 1 to {CASE_TITLE_MAX} characters")
+        if notes is not None and len(notes) > CASE_NOTES_MAX:
+            raise CaseError(f"notes are limited to {CASE_NOTES_MAX} characters")
+        cleaned = clean_tags(tags) if tags is not None else None
+        with self._lock, self._db:
+            row = self._case_row(case_id)
+            if row is None:
+                return False
+            self._db.execute(
+                "UPDATE cases SET title=?, notes=?, tags=?, updated_at=? WHERE id=?",
+                (
+                    title.strip() if title is not None else row[1],
+                    notes if notes is not None else row[2],
+                    json.dumps(cleaned) if cleaned is not None else row[3],
+                    self._clock().isoformat(),
+                    case_id,
+                ),
+            )
+            return True
+
+    def case_delete(self, case_id: str) -> bool:
+        with self._lock, self._db:
+            self._db.execute("DELETE FROM case_reports WHERE case_id=?", (case_id,))
+            return self._db.execute("DELETE FROM cases WHERE id=?", (case_id,)).rowcount == 1
+
+    def case_add_report(self, case_id: str, report_id: str) -> bool:
+        """False when the case or the report does not exist."""
+        with self._lock, self._db:
+            if self._case_row(case_id) is None:
+                return False
+            if not self._db.execute("SELECT 1 FROM reports WHERE id=?", (report_id,)).fetchone():
+                return False
+            now = self._clock().isoformat()
+            self._db.execute(
+                "INSERT OR IGNORE INTO case_reports VALUES (?,?,?)", (case_id, report_id, now)
+            )
+            self._db.execute("UPDATE cases SET updated_at=? WHERE id=?", (now, case_id))
+            return True
+
+    def case_remove_report(self, case_id: str, report_id: str) -> bool:
+        with self._lock, self._db:
+            return (
+                self._db.execute(
+                    "DELETE FROM case_reports WHERE case_id=? AND report_id=?", (case_id, report_id)
+                ).rowcount
+                == 1
+            )
+
+    def case_list(self, tag: str | None = None) -> list[CaseSummary]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT c.id, c.title, c.tags, c.created_at, c.updated_at, "
+                "(SELECT count(*) FROM case_reports r WHERE r.case_id=c.id) "
+                "FROM cases c ORDER BY c.updated_at DESC"
+            ).fetchall()
+        cases = [
+            CaseSummary(
+                id=r[0],
+                title=r[1],
+                tags=json.loads(r[2]),
+                created_at=r[3],
+                updated_at=r[4],
+                report_count=int(r[5]),
+            )
+            for r in rows
+        ]
+        return [c for c in cases if tag in c.tags] if tag else cases
+
+    def case_get(self, case_id: str) -> CaseDetail | None:
+        with self._lock:
+            row = self._case_row(case_id)
+            if row is None:
+                return None
+            reps = self._db.execute(
+                "SELECT r.id, r.ioc, r.ioc_type, r.level, r.created_at FROM case_reports cr "
+                "JOIN reports r ON r.id = cr.report_id WHERE cr.case_id=? ORDER BY cr.added_at",
+                (case_id,),
+            ).fetchall()
+        return CaseDetail(
+            id=row[0],
+            title=row[1],
+            notes=row[2],
+            tags=json.loads(row[3]),
+            created_at=row[4],
+            updated_at=row[5],
+            report_count=len(reps),
+            reports=[
+                ReportSummary(id=r[0], ioc=r[1], ioc_type=r[2], level=r[3], created_at=r[4])
+                for r in reps
+            ],
+        )
 
     # --- statistics ---------------------------------------------------------------------
     def record_stats(self, results: list[SourceResult]) -> None:
