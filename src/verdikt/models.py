@@ -82,6 +82,8 @@ class SourceResult(Model):
     link: HttpUrl | None = None
     related: list[RelatedIOC] = Field(default_factory=list[RelatedIOC])
     cached: bool = False
+    started_ms: int = 0  # offset from the start of the check; set by the engine
+    duration_ms: int = 0  # 0 for a cache hit
     fetched_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     raw: dict[str, Any] | None = None  # the one allowed Any: arbitrary vendor JSON
 

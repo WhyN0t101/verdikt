@@ -283,6 +283,16 @@ export interface components {
              */
             cached: boolean;
             /**
+             * Started Ms
+             * @default 0
+             */
+            started_ms: number;
+            /**
+             * Duration Ms
+             * @default 0
+             */
+            duration_ms: number;
+            /**
              * Fetched At
              * Format: date-time
              */

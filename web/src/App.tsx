@@ -8,7 +8,8 @@ import { LogStream } from "./components/LogStream";
 import { MapView } from "./components/MapView";
 import { RawJson } from "./components/RawJson";
 import { SourceTable } from "./components/SourceTable";
-import { VerdictCard } from "./components/VerdictCard";
+import { Diagnostics, VerdictHud } from "./components/VerdictCard";
+import { Waterfall } from "./components/Waterfall";
 import { formatDuration, formatQuota } from "./lib/format";
 import type { Report } from "./model";
 
@@ -111,14 +112,19 @@ export default function App() {
   // keyless sources (InternetDB, OTX, ...) are always on, so test for any key-gated source
   const noKeys = sources.data !== undefined && !enabled.some((s) => s.requires_key);
 
+  const showReport = report !== null && !check.isPending;
+  const quotas = sources.data?.filter((s) => s.daily_budget !== null) ?? [];
+
   return (
-    <div className="relative flex min-h-full flex-col">
+    <div className="relative flex min-h-full flex-col lg:h-full">
       <header className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-line bg-panel px-4 py-2.5">
         <div className="flex items-center gap-2">
-          <span aria-hidden="true" className="grid h-7 w-7 place-items-center rounded-lg font-mono text-sm font-bold text-white" style={{ background: "var(--violet-600)" }}>
-            v
-          </span>
-          <span className="text-base font-bold tracking-tight">verdikt</span>
+          <svg aria-hidden="true" viewBox="0 0 32 32" className="h-7 w-7">
+            <rect width="32" height="32" rx="7" fill="var(--violet-600)" />
+            <path d="M8.5 10l7.5 13 7.5-13" stroke="#fff" strokeWidth="3.4" fill="none" strokeLinejoin="miter" />
+            <path d="M3.5 10h6M22.5 10h6" stroke="#fff" strokeWidth="1.6" />
+          </svg>
+          <span className="text-lg font-bold tracking-tight">verdikt</span>
         </div>
         <CommandBar ref={input} value={value} pending={check.isPending} onChange={setValue} onSubmit={() => check.mutate(value)} />
         <div className="mono flex items-center gap-3 text-xs text-muted">
@@ -139,76 +145,120 @@ export default function App() {
         </div>
       </header>
 
-      <div className="mono border-b border-line px-4 py-1.5 text-xs text-muted" aria-label="Breadcrumb">
-        verdikt / check / <span className="text-ink">{report?.ioc ?? "-"}</span>
-      </div>
 
-      <div className="grid flex-1 gap-4 p-4 lg:grid-cols-[15rem_minmax(0,1fr)] xl:grid-cols-[15rem_minmax(0,1fr)_19rem]">
-        <aside className="rounded-md border border-line bg-panel py-2 lg:max-h-[calc(100vh-7rem)] lg:overflow-y-auto">
-          <h2 className="label px-3 pb-2">History</h2>
+      <div className="grid min-h-0 flex-1 lg:grid-cols-[14rem_minmax(0,1fr)] xl:grid-cols-[14rem_minmax(0,1fr)_20rem]">
+        <aside className="border-b border-line bg-panel py-2 lg:overflow-y-auto lg:border-b-0 lg:border-r">
+          <h2 className="label px-4 pb-2 pt-1">History</h2>
           <HistoryList items={history.data ?? []} activeId={report?.id ?? null} onSelect={(id) => void open(id)} />
         </aside>
 
-        <main className="min-w-0 space-y-4">
-          {noKeys && (
-            <p className="rounded-md border border-line-strong bg-panel p-3 text-sm" role="note">
-              Only keyless sources are enabled. Add API keys to .env to enable more (see .env.example).
-            </p>
-          )}
-          {openError && (
-            <p role="alert" className="rounded-md border border-malicious bg-panel p-3 text-sm text-malicious">
-              {openError}
-            </p>
-          )}
-          {check.isError && (
-            <p role="alert" className="rounded-md border border-malicious bg-panel p-3 text-sm text-malicious">
-              {check.error.message}
-            </p>
-          )}
-          {!report && !check.isPending && <EmptyState />}
-          {(report || check.isPending) && (
-            <>
-              {report && !check.isPending && <VerdictCard report={report} />}
-              {check.isPending && <div className="pixel h-28 rounded-md" role="status" aria-label="Checking" />}
-              <SourceTable report={check.isPending ? null : report} pending={check.isPending ? enabled : null} />
-              {report && !check.isPending && (
-                <section aria-label="Visualisations">
-                  <div role="tablist" className="mb-3 flex gap-1 border-b border-line">
-                    {TABS.map((t) => (
-                      <button
-                        key={t.id}
-                        role="tab"
-                        type="button"
-                        aria-selected={tab === t.id}
-                        onClick={() => setTab(t.id)}
-                        className={`-mb-px border-b-2 px-3 py-2 text-sm ${tab === t.id ? "border-accent text-ink" : "border-transparent text-muted"}`}
-                      >
-                        {t.label} <span className="label">{t.key}</span>
-                      </button>
-                    ))}
-                  </div>
-                  {tab === "map" && <MapView geo={report.geo} onPivot={run} />}
-                  {tab === "graph" && (
-                    <Suspense fallback={<div className="pixel h-24 rounded-md" role="status" aria-label="Loading graph" />}>
-                      <GraphView
-                        graph={report.graph}
-                        rootId={report.graph.nodes[0]?.id ?? ""}
-                        theme={theme}
-                        sources={sources.data ?? []}
-                        pending={check.isPending}
-                        onPivot={run}
-                      />
-                    </Suspense>
-                  )}
-                  {tab === "raw" && <RawJson id={report.id} />}
-                </section>
+        <main className="flex min-h-0 min-w-0 flex-col">
+          {(noKeys || openError || check.isError) && (
+            <div className="space-y-px">
+              {noKeys && (
+                <p className="border-b border-line bg-panel px-4 py-2 text-sm" role="note">
+                  Only keyless sources are enabled. Add API keys to .env to enable more (see .env.example).
+                </p>
               )}
-            </>
+              {openError && (
+                <p role="alert" className="border-b border-malicious bg-panel px-4 py-2 text-sm text-malicious">
+                  {openError}
+                </p>
+              )}
+              {check.isError && (
+                <p role="alert" className="border-b border-malicious bg-panel px-4 py-2 text-sm text-malicious">
+                  {check.error.message}
+                </p>
+              )}
+            </div>
+          )}
+
+          <section aria-label="Visualisations" className="frame min-h-[26rem] flex-1 overflow-hidden">
+            {tab !== "map" && showReport ? null : <MapView geo={showReport ? report.geo : []} onPivot={run} />}
+            {showReport && tab === "graph" && (
+              <div className="absolute inset-0 z-[1] bg-bg">
+                <Suspense fallback={<div className="pixel m-4 h-24" role="status" aria-label="Loading graph" />}>
+                  <GraphView
+                    graph={report.graph}
+                    rootId={report.graph.nodes[0]?.id ?? ""}
+                    theme={theme}
+                    sources={sources.data ?? []}
+                    pending={check.isPending}
+                    onPivot={run}
+                  />
+                </Suspense>
+              </div>
+            )}
+            {showReport && tab === "raw" && (
+              <div className="absolute inset-0 z-[1] bg-bg">
+                <RawJson id={report.id} />
+              </div>
+            )}
+            {check.isPending && <div className="sweep" role="status" aria-label="Checking" />}
+            {!report && !check.isPending && <EmptyState />}
+
+            {showReport && (
+              <>
+                <div className="absolute left-4 top-4 z-10 w-[calc(100%-2rem)] max-w-md">
+                  <VerdictHud report={report} />
+                </div>
+                <div role="tablist" className="hud absolute right-4 top-4 z-10 flex">
+                  {TABS.map((t) => (
+                    <button
+                      key={t.id}
+                      role="tab"
+                      type="button"
+                      aria-selected={tab === t.id}
+                      onClick={() => setTab(t.id)}
+                      className={`border-b-2 px-3 py-1.5 text-sm ${tab === t.id ? "border-accent text-ink" : "border-transparent text-muted"}`}
+                    >
+                      {t.label} <span className="label">{t.key}</span>
+                    </button>
+                  ))}
+                </div>
+                {tab === "map" && (
+                  <p className="mono absolute bottom-4 left-4 z-10 max-w-sm text-xs text-muted">
+                    {report.geo.length === 0
+                      ? "No location for this indicator. Locations need an IP and the GeoLite2 databases (set VERDIKT_GEOIP_DIR in .env)."
+                      : "Locations are approximate: cloud, CDN and VPN addresses resolve to the provider's registered location, not the operator's."}
+                  </p>
+                )}
+              </>
+            )}
+          </section>
+
+          {(check.isPending || report) && (
+            <div className="max-h-[36%] shrink-0 overflow-auto border-t border-line">
+              <SourceTable report={check.isPending ? null : report} pending={check.isPending ? enabled : null} />
+            </div>
           )}
         </main>
 
-        <div className="space-y-4 lg:col-span-2 xl:col-span-1">
+        <div className="border-t border-line bg-panel lg:col-span-2 lg:overflow-y-auto xl:col-span-1 xl:border-l xl:border-t-0">
+          <Diagnostics report={showReport ? report : null} />
+          <Waterfall report={showReport ? report : null} />
           <LogStream report={check.isPending ? null : report} />
+          {quotas.length > 0 && (
+            <section aria-label="Daily quota">
+              <h2 className="label px-4 py-2.5">Daily quota</h2>
+              <ul className="space-y-2 px-4 pb-4">
+                {quotas.map((s) => {
+                  const pct = Math.min(100, (s.used_today / (s.daily_budget ?? 1)) * 100);
+                  return (
+                    <li key={s.name}>
+                      <div className="mono flex justify-between text-xs">
+                        <span>{s.name}</span>
+                        <span className="text-muted">{formatQuota(s.used_today, s.daily_budget)}</span>
+                      </div>
+                      <div className="mt-1 h-1.5 border border-line-strong" aria-hidden="true">
+                        <div className="hatch h-full text-accent-text" style={{ width: `${pct}%` }} />
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          )}
         </div>
       </div>
     </div>

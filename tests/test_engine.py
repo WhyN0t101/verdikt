@@ -43,6 +43,21 @@ async def test_cache_hit_skips_http_and_keeps_raw(
     assert second.without_raw().results[0].raw is None
 
 
+async def test_results_carry_per_source_timing(
+    settings: Settings, cache: Cache, client: httpx.AsyncClient, router: respx.MockRouter
+) -> None:
+    router.get(VT_URL).mock(
+        return_value=httpx.Response(200, json=fixture("virustotal", "ip_clean"))
+    )
+    engine = make_engine(settings, cache, client, [VirusTotal("k")])
+    first = (await engine.check("8.8.8.8")).results[0]
+    second = (await engine.check("8.8.8.8")).results[0]
+    assert first.started_ms >= 0
+    assert first.duration_ms >= 0
+    assert second.cached is True
+    assert second.duration_ms == 0  # a cache hit is not the stored call's latency
+
+
 async def test_no_cache_bypasses_read(
     settings: Settings, cache: Cache, client: httpx.AsyncClient, router: respx.MockRouter
 ) -> None:

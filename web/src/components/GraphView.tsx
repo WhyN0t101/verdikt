@@ -101,14 +101,14 @@ export function GraphView({ graph, rootId, theme, sources, pending, onPivot }: P
   const canPivot = selected !== null && PIVOTABLE.has(selected.kind) && selected.id !== rootId;
 
   return (
-    <div className="grid gap-3 lg:grid-cols-[1fr_16rem]">
+    <div className="absolute inset-0">
       <div
         ref={host}
         role="img"
         aria-label={`Relationship graph with ${graph.nodes.length} nodes and ${graph.edges.length} edges`}
-        className="h-[26rem] rounded-md border border-line bg-panel"
+        className="h-full w-full"
       />
-      <aside className="rounded-md border border-line bg-panel p-3 text-sm" aria-live="polite">
+      <aside className="hud absolute bottom-4 right-6 w-64 p-3 text-sm" aria-live="polite">
         <h3 className="label">Selected node</h3>
         {selected ? (
           <div className="mt-2 space-y-2">

@@ -123,9 +123,11 @@ class Engine:
             for s in self.sources
         ]
 
-    async def _query(self, src: Source, ioc: IOC, no_cache: bool) -> SourceResult:
+    async def _query(self, src: Source, ioc: IOC, no_cache: bool, t0: float) -> SourceResult:
+        start = time.perf_counter()
+        started_ms = int((start - t0) * 1000)
         if not no_cache and (hit := self.cache.get(src.name, ioc.value, src.ttl)) is not None:
-            return hit
+            return hit.model_copy(update={"started_ms": started_ms, "duration_ms": 0})
         gate = Gate(
             src.name,
             self._http,
@@ -136,6 +138,12 @@ class Engine:
             backoff=self._backoff,
         )
         result = await src.query(ioc, gate)
+        result = result.model_copy(
+            update={
+                "started_ms": started_ms,
+                "duration_ms": int((time.perf_counter() - start) * 1000),
+            }
+        )
         if result.status in (Status.OK, Status.NOT_FOUND):
             self.cache.put(src.name, ioc.value, result)
         return result
@@ -148,7 +156,7 @@ class Engine:
         active = [s for s in self.sources if s.enabled and ioc.type in s.supports]
 
         outcomes = await asyncio.gather(
-            *(self._query(s, ioc, no_cache) for s in active), return_exceptions=True
+            *(self._query(s, ioc, no_cache, started) for s in active), return_exceptions=True
         )
         results: list[SourceResult] = []
         for src, out in zip(active, outcomes, strict=True):

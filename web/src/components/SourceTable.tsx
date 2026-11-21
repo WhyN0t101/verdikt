@@ -1,5 +1,5 @@
 import type { Report, SourceInfo } from "../model";
-import { LevelBadge } from "./LevelBadge";
+import { LEVEL_BORDER, LevelBadge } from "./LevelBadge";
 
 interface Props {
   report: Report | null;
@@ -20,10 +20,10 @@ function Skeleton({ name }: { name: string }) {
 
 export function SourceTable({ report, pending }: Props) {
   return (
-    <section aria-label="Sources" className="overflow-x-auto rounded-md border border-line bg-panel">
+    <section aria-label="Sources" className="overflow-auto bg-panel">
       <table className="w-full min-w-[520px] text-left text-sm">
         <thead>
-          <tr className="label">
+          <tr className="label sticky top-0 bg-panel">
             <th className="px-3 py-2 font-normal">Source</th>
             <th className="px-3 py-2 font-normal">Level</th>
             <th className="px-3 py-2 font-normal">Result</th>
@@ -35,7 +35,7 @@ export function SourceTable({ report, pending }: Props) {
             ? pending.map((s) => <Skeleton key={s.name} name={s.name} />)
             : report?.results.map((r) => (
                 <tr key={r.source} className="border-t border-line align-top">
-                  <td className="mono px-3 py-2">
+                  <td className={`mono border-l-2 px-3 py-2 ${r.status === "ok" ? LEVEL_BORDER[r.level] : "border-transparent"}`}>
                     {r.source}
                     {r.cached && <span className="label ml-2 border border-line px-1">cached</span>}
                   </td>

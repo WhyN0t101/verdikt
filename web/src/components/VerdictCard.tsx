@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { defang, formatDuration, typeTag } from "../lib/format";
 import type { Report } from "../model";
-import { LevelBadge } from "./LevelBadge";
+import { LEVEL_BG, LEVEL_BORDER, LevelBadge } from "./LevelBadge";
 
 function CopyButton({ text }: { text: string }) {
   const [done, setDone] = useState(false);
@@ -25,43 +25,76 @@ function CopyButton({ text }: { text: string }) {
   );
 }
 
-export function VerdictCard({ report }: { report: Report }) {
-  const geo = report.geo.find((g) => g.role === "ioc");
-  const rows: [string, string][] = [
-    ["Confidence", `${report.agreeing}/${report.total} sources`],
-    ["ASN", geo?.asn ? `AS${geo.asn}${geo.as_org ? ` ${geo.as_org}` : ""}` : "-"],
-    ["Country", geo?.country ?? "-"],
-    ["Lookup", formatDuration(report.duration_ms)],
-  ];
+/** One square per source; filled squares are the sources that agree with the verdict. */
+function Confidence({ report }: { report: Report }) {
   return (
-    <section aria-label="Verdict" className="rounded-md border border-line bg-panel p-4">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <LevelBadge level={report.level} size="lg" />
+    <span className="flex items-center gap-2">
+      <span className="flex gap-0.5" aria-hidden="true">
+        {Array.from({ length: report.total }, (_, i) => (
+          <span key={i} className={`h-2.5 w-2.5 rounded-[2px] ${i < report.agreeing ? LEVEL_BG[report.level] : "border border-line-strong"}`} />
+        ))}
+      </span>
+      <span className="mono text-xs text-muted">
+        {report.agreeing}/{report.total} sources agree
+      </span>
+    </span>
+  );
+}
+
+/** Verdict overlay on the viewport: the answer first, the evidence one glance below. */
+export function VerdictHud({ report }: { report: Report }) {
+  return (
+    <section aria-label="Verdict" className={`hud w-full max-w-md border-l-4 p-4 ${LEVEL_BORDER[report.level]}`}>
+      <LevelBadge level={report.level} size="lg" />
+      <div className="mt-3 flex flex-wrap items-center gap-2">
         <span className="mono min-w-0 break-all text-base">{report.ioc}</span>
         <span className="label rounded border border-line px-1.5 py-0.5">{typeTag(report.ioc_type)}</span>
         <CopyButton text={defang(report.ioc)} />
       </div>
-      <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-4">
-        {rows.map(([k, v]) => (
-          <div key={k}>
-            <dt className="label">{k}</dt>
-            <dd className="mono mt-0.5 truncate text-sm" title={v}>
-              {v}
-            </dd>
-          </div>
-        ))}
-      </dl>
+      <div className="mt-3">
+        <Confidence report={report} />
+      </div>
       {report.reasons.length > 0 && (
-        <div className="mt-4 border-t border-line pt-3">
-          <h3 className="label">Reasons</h3>
-          <ul className="mt-1.5 space-y-1 text-sm">
-            {report.reasons.map((r, i) => (
-              <li key={i} className="mono text-[13px]">
-                {r}
-              </li>
-            ))}
-          </ul>
-        </div>
+        <ul className="mt-3 space-y-1 border-t border-line pt-3">
+          {report.reasons.map((r, i) => (
+            <li key={i} className="mono text-xs text-muted">
+              {r}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/** Key/value readout for the right column. */
+export function Diagnostics({ report }: { report: Report | null }) {
+  const geo = report?.geo.find((g) => g.role === "ioc");
+  const rows: [string, string][] = report
+    ? [
+        ["Target", report.ioc],
+        ["Type", typeTag(report.ioc_type)],
+        ["ASN", geo?.asn ? `AS${geo.asn}${geo.as_org ? ` ${geo.as_org}` : ""}` : "-"],
+        ["Country", geo?.country ?? "-"],
+        ["Lookup", formatDuration(report.duration_ms)],
+      ]
+    : [];
+  return (
+    <section aria-label="Diagnostics" className="border-b border-line">
+      <h2 className="label px-4 py-2.5">Diagnostics</h2>
+      {report ? (
+        <dl className="px-4 pb-3">
+          {rows.map(([k, v]) => (
+            <div key={k} className="flex items-baseline justify-between gap-4 py-1">
+              <dt className="label shrink-0">{k}</dt>
+              <dd className="mono min-w-0 truncate text-xs" title={v}>
+                {v}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p className="px-4 pb-3 text-sm text-muted">Target, ASN and country appear after a check.</p>
       )}
     </section>
   );

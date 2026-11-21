@@ -1,6 +1,6 @@
 # verdikt — Design Notes
 
-Two references, kept in `docs/design/`:
+Two references, kept locally in `docs/design/` (git-ignored, not in the repo):
 
 - `ref-palette.webp`: **colours and texture.** Use this palette.
 - `ref-layout.webp`: **layout and density idea.** Borrow the structure, not the colours.

@@ -1,9 +1,8 @@
 import { useMemo, useState } from "react";
 import land from "../data/land.json";
+import { defang, LEVEL_LABEL } from "../lib/format";
 import { greatCircle, project } from "../lib/geo";
-import { defang } from "../lib/format";
 import type { GeoPoint } from "../model";
-import { LEVEL_LABEL } from "../lib/format";
 
 const W = 720;
 const H = 360;
@@ -24,6 +23,7 @@ interface Props {
   onPivot: (ip: string) => void;
 }
 
+/** Fills its (positioned) parent. With no points it is the bare dot-matrix world. */
 export function MapView({ geo, onPivot }: Props) {
   const [hover, setHover] = useState<GeoPoint | null>(null);
   const origin = geo.find((g) => g.role === "ioc");
@@ -44,114 +44,98 @@ export function MapView({ geo, onPivot }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [geo]);
 
-  if (geo.length === 0) {
-    return (
-      <p className="rounded-md border border-line bg-panel p-4 text-sm text-muted">
-        No location for this indicator. Locations need an IP and the GeoLite2 databases (set VERDIKT_GEOIP_DIR in .env).
-      </p>
-    );
-  }
-
   const c = origin ? project(origin.lon, origin.lat, W, H) : { x: W / 2, y: H / 2 };
-  const hp = hover ? project(hover.lon, hover.lat, W, H) : null;
+  const shown = hover ?? origin ?? null;
 
   return (
-    <figure className="m-0">
-      <div className="relative overflow-hidden rounded-md border border-line bg-panel">
-        <svg viewBox={`0 0 ${W} ${H}`} role="group" aria-label="World map of the indicator and related IPs" className="block w-full">
-          <defs>
-            <filter id="glow" x="-100%" y="-100%" width="300%" height="300%">
-              <feGaussianBlur stdDeviation="3" result="b" />
-              <feMerge>
-                <feMergeNode in="b" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-          </defs>
-          {/* concentric grid and crosshairs behind the land */}
-          <g fill="none" stroke="var(--grid)" strokeWidth="1">
-            {[60, 120, 180, 240, 300].map((r) => (
-              <circle key={r} cx={c.x} cy={c.y} r={r} />
-            ))}
-          </g>
-          <g stroke="var(--grid)" strokeWidth="1">
-            {[0, 1, 2, 3, 4, 5, 6].flatMap((i) =>
-              [0, 1, 2, 3, 4].map((j) => {
-                const x = 60 + i * 100;
-                const y = 40 + j * 70;
-                return <path key={`${i}-${j}`} d={`M${x - 3} ${y}h6M${x} ${y - 3}v6`} />;
-              }),
-            )}
-          </g>
-          <path d={LAND_PATH} stroke="var(--land)" strokeWidth="2.2" strokeLinecap="round" fill="none" />
-          {arcs.map((pts) => (
-            <polyline key={pts} points={pts} fill="none" stroke="var(--violet-300)" strokeWidth="1" opacity="0.8" />
+    <div className="absolute inset-0">
+      <svg viewBox={`0 0 ${W} ${H}`} role="group" aria-label="World map of the indicator and related IPs" className="block h-full w-full overflow-visible">
+        <defs>
+          <filter id="glow" x="-100%" y="-100%" width="300%" height="300%">
+            <feGaussianBlur stdDeviation="3" result="b" />
+            <feMerge>
+              <feMergeNode in="b" />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
+        </defs>
+        {/* concentric range rings centred on the indicator, and a crosshair lattice */}
+        <g fill="none" stroke="var(--grid)" strokeWidth="1">
+          {[60, 120, 180, 240, 300, 420, 560].map((r) => (
+            <circle key={r} cx={c.x} cy={c.y} r={r} />
           ))}
-          {origin && (
-            <g aria-hidden="true">
-              <circle className="pulse" cx={c.x} cy={c.y} r="5" fill="none" stroke="var(--lvl-info)" strokeWidth="1" />
-              <path d={`M${c.x - 14} ${c.y}h8M${c.x + 6} ${c.y}h8M${c.x} ${c.y - 14}v8M${c.x} ${c.y + 6}v8`} stroke="var(--lvl-info)" strokeWidth="1" />
-            </g>
+        </g>
+        <g stroke="var(--grid)" strokeWidth="1">
+          {[-1, 0, 1, 2, 3, 4, 5, 6, 7].flatMap((i) =>
+            [-1, 0, 1, 2, 3, 4, 5].map((j) => {
+              const x = 60 + i * 100;
+              const y = 40 + j * 70;
+              return <path key={`${i}-${j}`} d={`M${x - 3} ${y}h6M${x} ${y - 3}v6`} />;
+            }),
           )}
-          {geo.map((g, idx) => {
-            const p = project(g.lon, g.lat, W, H);
-            const isOrigin = g.role === "ioc";
-            const n = isOrigin ? null : related.indexOf(g) + 1;
-            return (
-              <g
-                key={g.ip}
-                tabIndex={0}
-                role="button"
-                aria-label={`${defang(g.ip)}, ${g.country ?? "unknown country"}, ${LEVEL_LABEL[g.level]}${isOrigin ? "" : ". Activate to check this IP"}`}
-                style={{ cursor: isOrigin ? "default" : "pointer", outline: "none" }}
-                onMouseEnter={() => setHover(g)}
-                onMouseLeave={() => setHover(null)}
-                onFocus={() => setHover(g)}
-                onBlur={() => setHover(null)}
-                onClick={() => !isOrigin && onPivot(g.ip)}
-                onKeyDown={(e) => {
-                  if ((e.key === "Enter" || e.key === " ") && !isOrigin) {
-                    e.preventDefault();
-                    onPivot(g.ip);
-                  }
-                }}
-                data-idx={idx}
-              >
-                <circle cx={p.x} cy={p.y} r="12" fill="transparent" />
-                <circle cx={p.x} cy={p.y} r={isOrigin ? 4.5 : 3.5} style={{ fill: `var(--lvl-${g.level})` }} filter="url(#glow)" stroke="var(--panel)" strokeWidth="1.5" />
-                {n !== null && (
-                  <g>
-                    <path d={`M${p.x + 4} ${p.y - 4}l8 -8`} stroke="var(--violet-300)" strokeWidth="1" />
-                    <rect x={p.x + 12} y={p.y - 22} width="13" height="13" fill="var(--panel)" stroke="var(--violet-300)" />
-                    <text x={p.x + 18.5} y={p.y - 12.2} textAnchor="middle" fontSize="8.5" fill="var(--text)" fontFamily="var(--font-mono)">
-                      {n}
-                    </text>
-                  </g>
-                )}
-              </g>
-            );
-          })}
-        </svg>
-        {hover && hp && (
-          <div
-            role="tooltip"
-            className="mono pointer-events-none absolute z-10 max-w-64 rounded border border-line-strong bg-panel2 px-2 py-1.5 text-xs shadow-none"
-            style={{ left: `${(hp.x / W) * 100}%`, top: `${(hp.y / H) * 100}%`, transform: "translate(8px, 8px)" }}
-          >
-            <div>{defang(hover.ip)}</div>
-            <div className="text-muted">
-              {hover.asn ? `AS${hover.asn} ` : ""}
-              {hover.as_org ?? ""}
-            </div>
-            <div className="text-muted">
-              {[hover.city, hover.country].filter(Boolean).join(", ") || "location unknown"} · {LEVEL_LABEL[hover.level]}
-            </div>
-          </div>
+        </g>
+        <path d={LAND_PATH} stroke="var(--land)" strokeWidth="2.6" strokeLinecap="round" fill="none" />
+        {arcs.map((pts) => (
+          <polyline key={pts} points={pts} fill="none" stroke="var(--violet-300)" strokeWidth="1.4" />
+        ))}
+        {origin && (
+          <g aria-hidden="true">
+            <circle className="pulse" cx={c.x} cy={c.y} r="5" fill="none" stroke="var(--lvl-info)" strokeWidth="1" />
+            <path d={`M${c.x - 14} ${c.y}h8M${c.x + 6} ${c.y}h8M${c.x} ${c.y - 14}v8M${c.x} ${c.y + 6}v8`} stroke="var(--lvl-info)" strokeWidth="1" />
+          </g>
         )}
-      </div>
-      <figcaption className="mt-2 text-xs text-muted">
-        Locations are approximate: cloud, CDN and VPN addresses resolve to the provider's registered location, not the operator's.
-      </figcaption>
-    </figure>
+        {geo.map((g, idx) => {
+          const p = project(g.lon, g.lat, W, H);
+          const isOrigin = g.role === "ioc";
+          const n = isOrigin ? null : related.indexOf(g) + 1;
+          return (
+            <g
+              key={g.ip}
+              tabIndex={0}
+              role="button"
+              aria-label={`${defang(g.ip)}, ${g.country ?? "unknown country"}, ${LEVEL_LABEL[g.level]}${isOrigin ? "" : ". Activate to check this IP"}`}
+              style={{ cursor: isOrigin ? "default" : "pointer", outline: "none" }}
+              onMouseEnter={() => setHover(g)}
+              onMouseLeave={() => setHover(null)}
+              onFocus={() => setHover(g)}
+              onBlur={() => setHover(null)}
+              onClick={() => !isOrigin && onPivot(g.ip)}
+              onKeyDown={(e) => {
+                if ((e.key === "Enter" || e.key === " ") && !isOrigin) {
+                  e.preventDefault();
+                  onPivot(g.ip);
+                }
+              }}
+              data-idx={idx}
+            >
+              <circle cx={p.x} cy={p.y} r="12" fill="transparent" />
+              {isOrigin && <circle cx={p.x} cy={p.y} r="9" fill="none" strokeWidth="1" style={{ stroke: `var(--lvl-${g.level})` }} />}
+              <circle cx={p.x} cy={p.y} r={isOrigin ? 4.5 : 3.5} style={{ fill: `var(--lvl-${g.level})` }} filter="url(#glow)" stroke="var(--panel)" strokeWidth="1.5" />
+              {n !== null && (
+                <g>
+                  <path d={`M${p.x + 4} ${p.y - 4}l8 -8`} stroke="var(--violet-300)" strokeWidth="1" />
+                  <rect x={p.x + 12} y={p.y - 22} width="13" height="13" fill="var(--panel)" stroke="var(--violet-300)" />
+                  <text x={p.x + 18.5} y={p.y - 12.2} textAnchor="middle" fontSize="8.5" fill="var(--text)" fontFamily="var(--font-mono)">
+                    {n}
+                  </text>
+                </g>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+      {shown && (
+        <div role="status" className="hud mono pointer-events-none absolute bottom-4 right-6 z-10 max-w-72 px-3 py-2 text-xs">
+          <div>{defang(shown.ip)}</div>
+          <div className="text-muted">
+            {shown.asn ? `AS${shown.asn} ` : ""}
+            {shown.as_org ?? ""}
+          </div>
+          <div className="text-muted">
+            {[shown.city, shown.country].filter(Boolean).join(", ") || "location unknown"} · {LEVEL_LABEL[shown.level]}
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
