@@ -9,6 +9,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+import click
 import typer.main
 
 from verdikt import cli
@@ -32,18 +33,28 @@ def test_section_9_yaml_is_the_shipped_rules_file() -> None:
     assert block.group(1).strip() == shipped.strip()
 
 
+def documented_routes() -> dict[str, set[str]]:
+    """path -> methods, from every table row of section 12 (a path may span several rows)."""
+    found: dict[str, set[str]] = {}
+    for line in section(12).splitlines():
+        cells = [c.strip() for c in line.split("|")]
+        if len(cells) > 3 and re.fullmatch(r"`/api/[^`]*`", cells[2]):
+            methods = {m.strip().upper() for m in cells[1].split(",")}
+            found.setdefault(cells[2].strip("`"), set()).update(methods)
+    return found
+
+
 def test_every_api_route_and_method_is_in_section_12() -> None:
-    text = section(12)
     schema = create_app(port=8765, token="schema-only").openapi()
-    missing: list[str] = []
+    documented = documented_routes()
+    problems: list[str] = []
     for path, ops in schema["paths"].items():
-        rows = [ln for ln in text.splitlines() if f"`{path}`" in ln]
-        if not rows:
-            missing.append(path)
-            continue
-        cells = rows[0].split("|")[1].upper()
-        missing += [f"{m.upper()} {path}" for m in ops if m.upper() not in cells]
-    assert not missing, f"not in PLAN.md section 12: {missing}"
+        want = {m.upper() for m in ops}
+        if path not in documented:
+            problems.append(f"missing {path}")
+        elif documented[path] != want:
+            problems.append(f"{path}: PLAN has {sorted(documented[path])}, API has {sorted(want)}")
+    assert not problems, problems
 
 
 def test_section_12_lists_no_route_that_does_not_exist() -> None:
@@ -66,15 +77,28 @@ def test_every_cli_command_is_in_section_10() -> None:
     assert not missing, f"not in PLAN.md section 10: {missing}"
 
 
-def test_every_option_of_check_and_bulk_is_in_section_10() -> None:
+def all_commands() -> list[tuple[str, click.Command]]:
+    """Every leaf command with its `verdikt ...` name, groups expanded."""
+    out: list[tuple[str, click.Command]] = []
+    for name, cmd in getattr(typer.main.get_command(cli.app), "commands", {}).items():
+        subs = getattr(cmd, "commands", None)
+        if subs:
+            out += [(f"{name} {sub_name}", sub) for sub_name, sub in subs.items()]
+        else:
+            out.append((name, cmd))
+    return out
+
+
+def test_every_option_of_every_command_is_in_section_10() -> None:
     text = section(10)
-    commands = getattr(typer.main.get_command(cli.app), "commands", {})
-    missing: list[str] = []
-    for name in ("check", "bulk", "ui"):
-        for param in commands[name].params:
-            for opt in getattr(param, "opts", []):
-                if opt.startswith("--") and opt != "--help" and opt not in text:
-                    missing.append(f"{name} {opt}")
+    missing = [
+        f"{name} {opt}"
+        for name, cmd in all_commands()
+        for param in cmd.params
+        if isinstance(param, click.Option)
+        for opt in param.opts
+        if opt.startswith("--") and opt != "--help" and opt not in text
+    ]
     assert not missing, f"options not in PLAN.md section 10: {missing}"
 
 
@@ -95,3 +119,29 @@ def test_every_source_is_in_section_3() -> None:
     sources = build_sources(Settings(_env_file=None))  # pyright: ignore[reportCallIssue]
     missing = [s.name for s in sources if s.name not in text]
     assert not missing, f"sources not named in PLAN.md section 3: {missing}"
+
+
+# --- the other docs: settings, notifiers ---------------------------------------------------
+
+
+def env_name(field: str) -> str:
+    return "VERDIKT_" + field.upper()
+
+
+def test_every_setting_is_in_env_example_and_the_readme_config_table() -> None:
+    from verdikt.config import Settings
+
+    env_example = (ROOT / ".env.example").read_text(encoding="utf-8")
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    names = [env_name(f) for f in Settings.model_fields]
+    assert [n for n in names if n not in env_example] == [], ".env.example is missing a setting"
+    assert [n for n in names if n not in readme] == [], "README.md is missing a setting"
+
+
+def test_every_notifier_is_named_in_the_readme() -> None:
+    from typing import get_args
+
+    from verdikt.notify import Platform
+
+    readme = (ROOT / "README.md").read_text(encoding="utf-8").lower()
+    assert [p for p in get_args(Platform) if p not in readme] == []

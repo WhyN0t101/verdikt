@@ -546,7 +546,7 @@ async def test_virustotal_without_those_fields_has_no_age_or_reputation_metric(
     assert result.metrics["malicious"] >= 0  # the rest still works
 
 
-@pytest.mark.parametrize("bad", [None, "yesterday", "", [], {}, True, 1e30, -5, "1795209759"])
+@pytest.mark.parametrize("bad", [None, "yesterday", "", [], {}, True, 1e30, "1795209759"])
 async def test_virustotal_ignores_garbage_scan_dates_and_reputation(
     bad: object, router: respx.MockRouter, gate: Gate, vt_now: list[datetime]
 ) -> None:
@@ -557,6 +557,21 @@ async def test_virustotal_ignores_garbage_scan_dates_and_reputation(
     result = await VirusTotal("k").query(IP, gate)
     assert result.status is Status.OK  # never an ERROR because of an odd optional field
     assert isinstance(result.metrics.get("malicious"), int)
+    # `True` would be stored as 1 and a numeric string would parse, if the typing check slipped
+    assert "last_analysis_age_days" not in result.metrics
+    assert "reputation" not in result.metrics
+
+
+async def test_virustotal_a_negative_scan_date_is_ignored_but_a_negative_reputation_is_kept(
+    router: respx.MockRouter, gate: Gate, vt_now: list[datetime]
+) -> None:
+    body = fixture("virustotal", "ip_hit")
+    body["data"]["attributes"]["last_analysis_date"] = -5
+    body["data"]["attributes"]["reputation"] = -5
+    router.route().mock(return_value=httpx.Response(200, json=body))
+    result = await VirusTotal("k").query(IP, gate)
+    assert "last_analysis_age_days" not in result.metrics
+    assert result.metrics["reputation"] == -5
 
 
 async def test_virustotal_negative_reputation_is_kept(

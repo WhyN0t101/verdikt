@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import base64
 import hashlib
-from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from urllib.parse import quote
@@ -14,11 +13,10 @@ from verdikt.models import IOC, IOCType, RelatedIOC, SourceResult, Status
 from verdikt.sources.base import BaseSource, Gate, json_object
 
 
-def _clock() -> datetime:
-    return datetime.now(UTC)
+def _now() -> datetime:
+    return datetime.now(UTC)  # a module function so tests can freeze it
 
 
-_now: Callable[[], datetime] = _clock  # a module attribute so tests can freeze it
 API = "https://www.virustotal.com/api/v3"
 GUI = "https://www.virustotal.com/gui"
 
