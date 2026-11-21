@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 
 import click
+import pytest
 import typer.main
 
 from verdikt import cli
@@ -17,6 +18,8 @@ from verdikt.api.app import create_app
 
 ROOT = Path(__file__).resolve().parent.parent
 PLAN = (ROOT / "PLAN.md").read_text(encoding="utf-8")
+README = (ROOT / "README.md").read_text(encoding="utf-8")
+SCHEMA = create_app(port=8765, token="schema-only").openapi()  # builds the app once, no network
 
 
 def section(number: int) -> str:
@@ -45,10 +48,9 @@ def documented_routes() -> dict[str, set[str]]:
 
 
 def test_every_api_route_and_method_is_in_section_12() -> None:
-    schema = create_app(port=8765, token="schema-only").openapi()
     documented = documented_routes()
     problems: list[str] = []
-    for path, ops in schema["paths"].items():
+    for path, ops in SCHEMA["paths"].items():
         want = {m.upper() for m in ops}
         if path not in documented:
             problems.append(f"missing {path}")
@@ -58,23 +60,8 @@ def test_every_api_route_and_method_is_in_section_12() -> None:
 
 
 def test_section_12_lists_no_route_that_does_not_exist() -> None:
-    schema = create_app(port=8765, token="schema-only").openapi()
     documented = set(re.findall(r"`(/api/[A-Za-z0-9_/{}-]+)`", section(12)))
-    assert documented <= set(schema["paths"]), documented - set(schema["paths"])
-
-
-def test_every_cli_command_is_in_section_10() -> None:
-    text = section(10)
-    root = typer.main.get_command(cli.app)
-    commands = getattr(root, "commands", {})
-    missing: list[str] = []
-    for name, cmd in commands.items():
-        subs = getattr(cmd, "commands", None)
-        if subs:
-            missing += [f"verdikt {name} {s}" for s in subs if f"verdikt {name} {s}" not in text]
-        elif f"verdikt {name}" not in text:
-            missing.append(f"verdikt {name}")
-    assert not missing, f"not in PLAN.md section 10: {missing}"
+    assert documented <= set(SCHEMA["paths"]), documented - set(SCHEMA["paths"])
 
 
 def all_commands() -> list[tuple[str, click.Command]]:
@@ -89,6 +76,12 @@ def all_commands() -> list[tuple[str, click.Command]]:
     return out
 
 
+def test_every_cli_command_is_in_section_10() -> None:
+    text = section(10)
+    missing = [f"verdikt {name}" for name, _ in all_commands() if f"verdikt {name}" not in text]
+    assert not missing, f"not in PLAN.md section 10: {missing}"
+
+
 def test_every_option_of_every_command_is_in_section_10() -> None:
     text = section(10)
     missing = [
@@ -100,15 +93,6 @@ def test_every_option_of_every_command_is_in_section_10() -> None:
         if opt.startswith("--") and opt != "--help" and opt not in text
     ]
     assert not missing, f"options not in PLAN.md section 10: {missing}"
-
-
-def test_every_notifier_is_in_section_11() -> None:
-    from typing import get_args
-
-    from verdikt.notify import Platform
-
-    text = section(11).lower()
-    assert [p for p in get_args(Platform) if p not in text] == []
 
 
 def test_every_source_is_in_section_3() -> None:
@@ -132,16 +116,16 @@ def test_every_setting_is_in_env_example_and_the_readme_config_table() -> None:
     from verdikt.config import Settings
 
     env_example = (ROOT / ".env.example").read_text(encoding="utf-8")
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
     names = [env_name(f) for f in Settings.model_fields]
     assert [n for n in names if n not in env_example] == [], ".env.example is missing a setting"
-    assert [n for n in names if n not in readme] == [], "README.md is missing a setting"
+    assert [n for n in names if n not in README] == [], "README.md is missing a setting"
 
 
-def test_every_notifier_is_named_in_the_readme() -> None:
+@pytest.mark.parametrize("doc", ["PLAN section 11", "README"])
+def test_every_notifier_is_named_in_the_docs(doc: str) -> None:
     from typing import get_args
 
     from verdikt.notify import Platform
 
-    readme = (ROOT / "README.md").read_text(encoding="utf-8").lower()
-    assert [p for p in get_args(Platform) if p not in readme] == []
+    text = (section(11) if doc.startswith("PLAN") else README).lower()
+    assert [p for p in get_args(Platform) if p not in text] == []
