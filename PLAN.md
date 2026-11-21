@@ -145,10 +145,7 @@ verdikt/
 ├── docs/                        # DESIGN, API, SOURCES, INTEGRATIONS, CODE_QUALITY
 └── tests/
     ├── fixtures/<source>/*.json # recorded or hand-made responses (see fixtures/README.md)
-    ├── test_detect.py  test_verdict.py  test_engine.py  test_cache.py
-    ├── test_sources*.py  test_feeds.py  test_cve.py  test_notify.py
-    ├── test_api.py  test_cli.py  test_dashboard.py  test_cases.py  test_scheduler.py
-    ├── test_features.py  test_hardening.py  test_plan_sync.py
+    └── test_*.py                # one file per module or feature: see the directory
 ```
 
 ---

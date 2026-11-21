@@ -124,4 +124,4 @@ End the report with the commands that were run, the tool versions, and what was 
 
 Found while preparing this document; confirm and triage them on the first run.
 
-- urlscan search rows often carry no verdict data, so that source currently contributes nothing (see `docs/SOURCES.md`).
+- urlscan search rows often carry no verdict data, so that source contributes context only (scan count, related IPs and domains), never a verdict (see `docs/SOURCES.md`).

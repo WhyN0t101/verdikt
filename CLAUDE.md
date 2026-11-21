@@ -51,7 +51,7 @@ cd web && npm run lint && npm run typecheck && npm test
 - API binds to `127.0.0.1` only. Keep the `Host` header check, the per-run session token, and JSON-only POST. Never add CORS headers.
 - Never send internal targets to any third party: private IPs (`not ip.is_global`), URLs whose host is private/internal, `localhost`, single-label names, `.local`/`.internal`/`.lan`/`.corp`/`.home.arpa`/`.intranet`/`.private`/`.home`/`.localdomain`, NAT64 addresses (`64:ff9b::/96`) wrapping a private IPv4, and `VERDIKT_INTERNAL_DOMAINS` suffixes.
 - Escape feed-derived text in notifications. It is single-lined and every dot is defanged. Telegram: `html.escape()`. Slack: `&`/`<`/`>` escaped, backtick becomes `'`, `*` and `~` removed. Discord and Teams: `(` `)` become `{` `}` and Discord sends `allowed_mentions: {parse: []}`. Email is plain text.
-- Retries obey the limiter and daily budget on every attempt. `Retry-After` longer than the timeout → `RATE_LIMITED`, no waiting.
+- Source retries obey the limiter and daily budget on every attempt. Alert delivery retries once, only when the wait is within the timeout. `Retry-After` longer than the timeout → `RATE_LIMITED`, no waiting.
 - The map must make no remote request (no tiles, no third-party fonts or images): a request would reveal what you investigate.
 - urlscan: search only. No scan submission unless explicitly added, and then `visibility=private` by default.
 - DNS resolution of IOCs is off by default.
