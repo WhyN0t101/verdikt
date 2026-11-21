@@ -270,7 +270,7 @@ test("cases: create from a report, edit notes and tags, export, reopen the repor
 
   await goto(page, "Cases");
   const list = page.getByRole("region", { name: "Cases", exact: true });
-  await list.getByRole("button", { name: new RegExp(`Investigation: ${BAD_IP.replaceAll(".", "\.")}`) }).first().click();
+  await list.getByRole("button", { name: `Investigation: ${BAD_IP.replaceAll(".", "[.]")}` }).first().click();
   const detail = page.getByRole("region", { name: "Case detail" });
   await detail.getByLabel("Notes").fill("Seen first in the proxy logs at 09:00.");
   await detail.getByLabel("Tags (comma separated)").fill("Phishing, q4");
