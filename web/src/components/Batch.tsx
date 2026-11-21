@@ -4,6 +4,7 @@ import { api } from "../api";
 import { downloadText, toCsv } from "../lib/csv";
 import { shortenMiddle, typeTag } from "../lib/format";
 import type { Extraction, IOCType, Report } from "../model";
+import { BatchTriage } from "./BatchTriage";
 import { LevelBadge } from "./LevelBadge";
 import { Button, FIELD } from "./ui";
 
@@ -156,6 +157,8 @@ export function Batch({ onOpen }: { onOpen: (id: string) => void }) {
               </table>
             </div>
           )}
+
+          {!running && <BatchTriage reports={rows.flatMap((r) => (r.report ? [r.report] : []))} />}
 
           {found.skipped.length > 0 && (
             <details className="border-t border-line px-4 py-3 text-sm">
