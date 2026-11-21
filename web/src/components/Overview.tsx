@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { ago, shortenMiddle } from "../lib/format";
+import { parseProgress } from "../lib/progress";
 import type { JobStatus, Level } from "../model";
 import { ActivityChart } from "./ActivityChart";
 import { LEVEL_BG, LevelBadge } from "./LevelBadge";
@@ -32,8 +33,7 @@ export function Overview({ onCheck }: { onCheck: (ioc: string) => void }) {
   const watchJob = sched.data?.find((j) => j.name === "watch");
   const watchRunning = watchJob?.running ?? false;
   // progress arrives as "3/50"; empty until the first entry finishes
-  const [done, total] = (watchJob?.progress ?? "").split("/").map(Number);
-  const watchPct = done !== undefined && total ? Math.min(100, Math.round((done / total) * 100)) : 0;
+  const frac = parseProgress(watchJob?.progress ?? "");
   const wasRunning = useRef(false);
   useEffect(() => {
     if (wasRunning.current && !watchRunning) {
@@ -131,7 +131,7 @@ export function Overview({ onCheck }: { onCheck: (ioc: string) => void }) {
             {watchRunning ? "Re-checking…" : "Re-check all"}
           </Button>
           <span className="text-xs text-muted" role="status" aria-live="polite">
-            {watchRunning && `Checked ${watchJob?.progress || "0"} entries so far.`}
+            {watchRunning && (frac === null ? "Starting…" : `Checked ${watchJob?.progress} entries so far.`)}
             {!watchRunning && recheck.isSuccess && (watchJob?.last_ok === false ? `Re-check failed: ${watchJob.last_detail}` : watchJob?.last_detail.startsWith("0 verdict") ? "No verdict changed." : watchJob?.last_detail)}
             {recheck.isError && `Re-check failed: ${recheck.error.message}`}
             {!watchRunning && !recheck.isSuccess && !recheck.isError && "A re-check skips the cache and uses source quota."}
@@ -143,10 +143,14 @@ export function Overview({ onCheck }: { onCheck: (ioc: string) => void }) {
             aria-label="Re-check progress"
             aria-valuemin={0}
             aria-valuemax={100}
-            aria-valuenow={watchPct}
+            aria-valuenow={frac === null ? undefined : Math.round(frac * 100)}
             className="mb-3 h-1.5 border border-line-strong"
           >
-            <div className="hatch h-full text-accent-text" style={{ width: `${watchPct}%` }} />
+            {frac === null ? (
+              <div className="pixel h-full w-full" />
+            ) : (
+              <div className="hatch h-full text-accent-text" style={{ width: `${frac * 100}%` }} />
+            )}
           </div>
         )}
         {watch.data && watch.data.entries.length === 0 && <p className="text-sm text-muted">Nothing watched yet. Open a report and choose Watch.</p>}
