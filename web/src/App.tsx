@@ -79,7 +79,7 @@ export default function App() {
     }
   }, [theme]);
 
-  const history = useQuery({ queryKey: ["reports"], queryFn: api.reports });
+  const history = useQuery({ queryKey: ["reports"], queryFn: () => api.reports() });
   const sources = useQuery({ queryKey: ["sources"], queryFn: api.sources });
 
   const check = useMutation({

@@ -55,6 +55,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reports/{report_id}/diff": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Report Diff */
+        get: operations["report_diff_api_reports__report_id__diff_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/reports/{report_id}/stix": {
         parameters: {
             query?: never;
@@ -791,6 +808,15 @@ export interface components {
          * @enum {string}
          */
         Level: "malicious" | "suspicious" | "safe" | "info" | "unknown";
+        /** MetricChange */
+        MetricChange: {
+            /** Key */
+            key: string;
+            /** From */
+            from: number | boolean | null;
+            /** To */
+            to: number | boolean | null;
+        };
         /** Recurring */
         Recurring: {
             /** Value */
@@ -857,6 +883,37 @@ export interface components {
              */
             created_at: string;
         };
+        /** ReportDiff */
+        ReportDiff: {
+            /** Report Id */
+            report_id: string;
+            /** Previous Id */
+            previous_id: string | null;
+            /** Previous At */
+            previous_at: string | null;
+            /** Changed */
+            changed: boolean;
+            level_from: components["schemas"]["Level"] | null;
+            level_to: components["schemas"]["Level"];
+            /** Agreeing From */
+            agreeing_from: number | null;
+            /** Agreeing To */
+            agreeing_to: number;
+            /** Total From */
+            total_from: number | null;
+            /** Total To */
+            total_to: number;
+            /** Confidence From */
+            confidence_from: string | null;
+            /** Confidence To */
+            confidence_to: string;
+            /** Sources */
+            sources: components["schemas"]["SourceChange"][];
+            /** Reasons Added */
+            reasons_added: string[];
+            /** Reasons Removed */
+            reasons_removed: string[];
+        };
         /** ReportSummary */
         ReportSummary: {
             /** Id */
@@ -897,6 +954,28 @@ export interface components {
             value: string;
             /** Reason */
             reason: string;
+        };
+        /** SourceChange */
+        SourceChange: {
+            /** Source */
+            source: string;
+            /**
+             * Change
+             * @enum {string}
+             */
+            change: "added" | "removed" | "changed";
+            status_from: components["schemas"]["Status"] | null;
+            status_to: components["schemas"]["Status"] | null;
+            level_from: components["schemas"]["Level"] | null;
+            level_to: components["schemas"]["Level"] | null;
+            /** Summary From */
+            summary_from: string | null;
+            /** Summary To */
+            summary_to: string | null;
+            /** No Answer */
+            no_answer: boolean;
+            /** Metrics */
+            metrics: components["schemas"]["MetricChange"][];
         };
         /** SourceHealth */
         SourceHealth: {
@@ -1081,6 +1160,11 @@ export interface components {
             entries: components["schemas"]["WatchEntry"][];
             /** Events */
             events: components["schemas"]["WatchEvent"][];
+            /**
+             * Max Entries
+             * @default 50
+             */
+            max_entries: number;
         };
     };
     responses: never;
@@ -1129,6 +1213,9 @@ export interface operations {
             query?: {
                 limit?: number;
                 offset?: number;
+                q?: string | null;
+                level?: components["schemas"]["Level"] | null;
+                type?: components["schemas"]["IOCType"] | null;
             };
             header?: never;
             path?: never;
@@ -1176,6 +1263,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Report"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    report_diff_api_reports__report_id__diff_get: {
+        parameters: {
+            query?: {
+                against?: string | null;
+            };
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReportDiff"];
                 };
             };
             /** @description Validation Error */

@@ -1,4 +1,4 @@
-import type { CaseDetail, CaseSummary, Extraction, FeedImport, JobStatus, FeedInfo, FeedUpdate, FeedbackLabel, Report, ReportSummary, SourceInfo, Stats, WatchChange, WatchState } from "./model";
+import type { CaseDetail, CaseSummary, Extraction, FeedImport, IOCType, JobStatus, FeedInfo, FeedUpdate, FeedbackLabel, Level, Report, ReportDiff, ReportSummary, SourceInfo, Stats, WatchChange, WatchState } from "./model";
 
 // The server injects a per-run token into the served page; the browser never sees API keys.
 function token(): string {
@@ -36,7 +36,16 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
 export const api = {
   check: (ioc: string, noCache = false) =>
     call<Report>("/api/check", { method: "POST", body: JSON.stringify({ ioc, no_cache: noCache }) }),
-  reports: () => call<ReportSummary[]>("/api/reports?limit=100"),
+  reports: (p: { q?: string; level?: Level; type?: IOCType; limit?: number; offset?: number } = {}) => {
+    const query = new URLSearchParams({ limit: String(p.limit ?? 100) });
+    if (p.q) query.set("q", p.q);
+    if (p.level) query.set("level", p.level);
+    if (p.type) query.set("type", p.type);
+    if (p.offset) query.set("offset", String(p.offset));
+    return call<ReportSummary[]>(`/api/reports?${query}`);
+  },
+  diff: (id: string, against?: string) =>
+    call<ReportDiff>(`/api/reports/${encodeURIComponent(id)}/diff${against ? `?against=${encodeURIComponent(against)}` : ""}`),
   report: (id: string, raw = false) => call<Report>(`/api/reports/${encodeURIComponent(id)}?raw=${raw}`),
   sources: () => call<SourceInfo[]>("/api/sources"),
   feedback: (id: string, label: FeedbackLabel) =>
