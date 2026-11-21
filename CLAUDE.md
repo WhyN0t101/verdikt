@@ -84,6 +84,7 @@ cd web && npm run lint && npm run typecheck && npm test
 - Don't start the next milestone without asking.
 - Don't add dependencies beyond `PLAN.md` without asking.
 - Live API calls during development cost quota (VT: 4/min, 500/day). Ask before running anything that makes more than a few.
+- Code audits (dead code, duplicates, performance, best practices): follow `docs/CODE_QUALITY.md`. Report findings first; change nothing until approved.
 
 ## Git
 
