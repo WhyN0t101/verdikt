@@ -66,10 +66,9 @@ class Scheduler:
                 self._tasks.append(asyncio.create_task(self._loop(name), name=f"verdikt-{name}"))
 
     async def stop(self) -> None:
-        tasks: list[asyncio.Task[object]] = [*self._tasks, *self._manual.values()]  # pyright: ignore[reportAssignmentType]
-        for t in tasks:
+        for t in (*self._tasks, *self._manual.values()):
             t.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+        await asyncio.gather(*self._tasks, *self._manual.values(), return_exceptions=True)
         self._tasks.clear()
         self._manual.clear()
 

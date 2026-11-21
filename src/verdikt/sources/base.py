@@ -7,7 +7,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
 from types import TracebackType
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 import httpx
 from pydantic import HttpUrl, TypeAdapter, ValidationError
@@ -196,4 +196,4 @@ def json_object(resp: httpx.Response) -> dict[str, Any]:
     data = resp.json()
     if not isinstance(data, dict):
         raise ValueError("expected JSON object")
-    return data  # pyright: ignore[reportUnknownVariableType]
+    return cast("dict[str, Any]", data)

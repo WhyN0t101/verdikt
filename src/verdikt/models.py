@@ -97,7 +97,7 @@ class SourceResult(Model):
     weight: int = 0  # evidence weight in the confidence score (0 = none)
     role: str = ""  # strong | weak | feed | context | no answer
     fetched_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    raw: dict[str, Any] | None = None  # the one allowed Any: arbitrary vendor JSON
+    raw: dict[str, Any] | None = None  # arbitrary vendor JSON
 
 
 class GeoPoint(Model):

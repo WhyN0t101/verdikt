@@ -167,3 +167,21 @@ async def test_api_scheduler_status_and_run_now(tmp_path: Path, router: respx.Mo
                 await c.post("/api/scheduler/nope/run", headers=AUTH, json={})
             ).status_code == 404
             assert (await c.get("/api/scheduler")).status_code == 401
+
+
+async def test_stop_cancels_a_manual_job_and_clears_it(
+    tmp_path: Path, client: httpx.AsyncClient
+) -> None:
+    gate = asyncio.Event()
+
+    async def stuck(_: float) -> None:
+        await gate.wait()  # never set: the job can only end by cancellation
+
+    s, _, _ = make(tmp_path, client, sleep=stuck)
+    await s.stop()  # nothing to cancel: no error
+    s.run_in_background("watch")
+    task = s._manual["watch"]  # pyright: ignore[reportPrivateUsage]
+    await asyncio.sleep(0)
+    await s.stop()
+    assert task.cancelled() or task.done()
+    assert s._manual == {}  # pyright: ignore[reportPrivateUsage]
