@@ -164,10 +164,14 @@ class Report(BaseModel):
     level: Level  # MALICIOUS | SUSPICIOUS | SAFE | UNKNOWN
     agreeing: int  # verdict-bearing sources agreeing with level
     total: int  # verdict-bearing sources that returned OK; UI formats "4/6"
+    confidence: Confidence  # low | medium | high, from rules.yaml weights
     reasons: list[str]  # why this verdict, human readable
     results: list[SourceResult]
     geo: list[GeoPoint]
     graph: Graph  # nodes + edges
+    seen_before: list[
+        SeenBefore
+    ]  # earlier reports sharing the IOC or related indicators (ASNs excluded)
     duration_ms: int
     created_at: datetime
 ```
@@ -252,6 +256,11 @@ benign_override:                # downgrade SUSPICIOUS -> SAFE; never touches MA
 context_only: [internetdb, greynoise]   # row level INFO, never count toward min_sources_for_safe
 high_weight: [virustotal, threatfox, urlhaus, malwarebazaar]
 min_sources_for_safe: 2
+min_high_weight_for_safe: 1     # SAFE needs this many successful high-weight sources
+weights: {virustotal: 3, threatfox: 3, urlhaus: 3, malwarebazaar: 3, abuseipdb: 2, hybrid: 2, urlscan: 1, otx: 1}
+default_weight: 1
+confidence_high: 5              # agreeing weight >= 5 -> high
+confidence_medium: 3            # >= 3 -> medium, below -> low
 ```
 
 Inside one source, keys are OR'ed (VT malicious ≥ 1 **or** suspicious ≥ 1).
@@ -261,10 +270,12 @@ Decision order in `decide()`:
 2. Any MALICIOUS row → MALICIOUS.
 3. Any SUSPICIOUS row → SUSPICIOUS, unless a `benign_override` matches **and** no high-weight source is blocking (see 4) → SAFE.
 4. Otherwise SAFE only if **both**:
-   - at least `min_sources_for_safe` **verdict-bearing** sources returned OK (INFO rows don't count), and
+   - at least `min_sources_for_safe` **verdict-bearing** sources returned OK (INFO rows don't count),
+   - at least `min_high_weight_for_safe` of them are high-weight sources (weak sources alone never give SAFE), and
    - no high-weight source that supports this IOC type returned ERROR, RATE_LIMITED or NOT_FOUND.
 5. Otherwise UNKNOWN.
 
+- `Report.confidence` (low / medium / high) is the summed `weights` of the verdict rows that agree with the final level, against `confidence_high` / `confidence_medium`. Conflicting evidence at least as heavy as the agreeing evidence, or an UNKNOWN verdict, gives low. Weights never change the level.
 - `decide()` is a pure function, fully unit-tested with table-driven cases.
 - Every rule that fires adds a line to `Report.reasons`.
 - `agreeing` / `total` count verdict-bearing OK rows only.
@@ -318,6 +329,9 @@ Exit codes (kept off 1 and 2, which Python crashes and Click usage errors alread
 | POST | `/api/check` | Body `{ioc, no_cache}` → `Report` |
 | GET | `/api/reports` | History list (paged) |
 | GET | `/api/reports/{id}` | One stored report |
+| GET | `/api/reports/{id}/stix` | The report as a STIX 2.1 bundle (`application/stix+json`) |
+| POST | `/api/reports/{id}/feedback` | Body `{label: false_positive\|false_negative\|correct, note?}` → recorded entry |
+| GET | `/api/feedback` | Recorded analyst feedback, newest first |
 | GET | `/api/sources` | Source status, quota left |
 | GET | `/api/health` | Liveness |
 | GET | `/*` | Built SPA (`web_dist/`) |

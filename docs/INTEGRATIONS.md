@@ -52,6 +52,11 @@ Network notes:
 - A Shuffle worker inside Docker reaches the host under another name (for example `host.docker.internal`), which the Host check rejects. Run verdikt in the same network namespace, or front it with a reverse proxy that rewrites the `Host` header. Do not loosen the check without understanding the DNS-rebinding risk (see `docs/API.md`).
 - Treat the token like a password. Anything holding it can spend your source quotas.
 
+## SIEM and STIX
+
+- **SIEM:** tail the JSON-lines audit log (`audit.jsonl`, see the README) with any log shipper. Events are one per check and one per analyst feedback, carry the defanged indicator and the verdict, and contain no keys, raw vendor data or feed text. Alert on `level` and `confidence` in your SIEM rules.
+- **STIX:** `verdikt check <ioc> --stix` or `GET /api/reports/{id}/stix` gives a STIX 2.1 bundle (identity, indicator, malware families with `indicates` relationships) to load into a TIP or MISP-style platform. It is plain JSON and has not been validated against a TIP.
+
 ## Planned seams
 
 These are built into the structure but not yet features: third-party sources through a `verdikt.sources` entry-point group, a user `rules.yaml` override (available now through `VERDIKT_RULES_PATH`), notifier plugins (Discord, Teams, email), theme swaps through `web/src/styles/tokens.css`, and independent UI panels for a dashboard layout.

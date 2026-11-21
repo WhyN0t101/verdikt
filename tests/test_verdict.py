@@ -29,7 +29,11 @@ CASES: list[tuple[str, list[SourceResult], Level]] = [
     ("urlhaus offline listing", [row("urlhaus", match=True, online=False)], Level.SUSPICIOUS),
     ("otx pulses", [row("otx", pulses=3)], Level.SUSPICIOUS),
     ("two clean sources", [vt(), row("abuseipdb", score=0)], Level.SAFE),
-    ("urlscan false is clean", [row("urlscan", malicious=False), row("otx", pulses=0)], Level.SAFE),
+    (
+        "weak sources alone are not safe",
+        [row("urlscan", malicious=False), row("otx", pulses=0)],
+        Level.UNKNOWN,
+    ),
     # errors are not clean
     (
         "error blocks safe",

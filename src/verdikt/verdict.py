@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from verdikt.config import Rules
-from verdikt.models import Level, SourceResult, Status
+from verdikt.models import Confidence, Level, SourceResult, Status
 
 Condition = dict[str, bool | int]
 
@@ -15,6 +15,7 @@ class Decision:
     level: Level
     agreeing: int
     total: int
+    confidence: Confidence
     reasons: list[str]
     results: list[SourceResult]
 
@@ -37,6 +38,21 @@ def _fired(metrics: dict[str, int | bool], condition: Condition) -> list[str]:
 def _match(rules: dict[str, Condition], row: SourceResult) -> list[str]:
     condition = rules.get(row.source)
     return _fired(row.metrics, condition) if condition else []
+
+
+def _confidence(verdict_rows: list[SourceResult], final: Level, rules: Rules) -> Confidence:
+    """Weighted agreement with the final level; conflicting evidence at least as heavy -> low."""
+
+    def weight(row: SourceResult) -> int:
+        return rules.weights.get(row.source, rules.default_weight)
+
+    agree = sum(weight(r) for r in verdict_rows if r.level is final)
+    against = sum(weight(r) for r in verdict_rows if r.level is not final)
+    if final is Level.UNKNOWN or against >= agree:
+        return Confidence.LOW
+    if agree >= rules.confidence_high:
+        return Confidence.HIGH
+    return Confidence.MEDIUM if agree >= rules.confidence_medium else Confidence.LOW
 
 
 def decide(results: list[SourceResult], rules: Rules) -> Decision:
@@ -96,13 +112,23 @@ def decide(results: list[SourceResult], rules: Rules) -> Decision:
         else:
             final = Level.SUSPICIOUS
     else:
-        if len(verdict_rows) >= rules.min_sources_for_safe and not blockers:
+        strong = sum(1 for r in verdict_rows if r.source in rules.high_weight)
+        if (
+            len(verdict_rows) >= rules.min_sources_for_safe
+            and strong >= rules.min_high_weight_for_safe
+            and not blockers
+        ):
             final = Level.SAFE
             reasons.append(f"{len(verdict_rows)} sources returned no hits")
         else:
             final = Level.UNKNOWN
             if blockers:
                 reasons.append(f"high-weight source gave no answer: {', '.join(blockers)}")
+            if strong < rules.min_high_weight_for_safe and not blockers:
+                reasons.append(
+                    f"no high-weight source answered ({', '.join(rules.high_weight)}); "
+                    f"need {rules.min_high_weight_for_safe}"
+                )
             if len(verdict_rows) < rules.min_sources_for_safe:
                 reasons.append(
                     f"only {len(verdict_rows)} verdict-bearing source(s) answered; "
@@ -110,4 +136,5 @@ def decide(results: list[SourceResult], rules: Rules) -> Decision:
                 )
 
     agreeing = sum(1 for r in verdict_rows if r.level is final)
-    return Decision(final, agreeing, len(verdict_rows), reasons, rows)
+    confidence = _confidence(verdict_rows, final, rules)
+    return Decision(final, agreeing, len(verdict_rows), confidence, reasons, rows)

@@ -10,6 +10,7 @@ import { LogStream } from "./components/LogStream";
 import { MapView } from "./components/MapView";
 import { RawJson } from "./components/RawJson";
 import { SourceTable } from "./components/SourceTable";
+import { ReportActions } from "./components/ReportActions";
 import { Diagnostics, VerdictHud } from "./components/VerdictCard";
 import { Waterfall } from "./components/Waterfall";
 import { formatDuration, formatQuota } from "./lib/format";
@@ -252,6 +253,7 @@ export default function App() {
 
         <div className="order-2 border-t border-line bg-panel lg:order-none lg:col-span-2 lg:overflow-y-auto xl:col-span-1 xl:border-l xl:border-t-0">
           <Diagnostics report={showReport ? report : null} />
+          {showReport && report && <ReportActions report={report} onOpen={(id) => void open(id)} />}
           <Waterfall report={showReport ? report : null} />
           <LogStream report={check.isPending ? null : report} />
           {quotas.length > 0 && (

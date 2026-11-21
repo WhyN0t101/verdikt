@@ -9,19 +9,20 @@ import secrets
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import httpx
 from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from verdikt.cache import ReportSummary
+from verdikt.cache import FeedbackEntry, ReportSummary
 from verdikt.config import get_settings
 from verdikt.detect import DetectError
 from verdikt.engine import Engine, SourceInfo, build_engine
 from verdikt.models import Model, Report
+from verdikt.stix import to_stix
 
 TOKEN_HEADER = "x-verdikt-token"  # noqa: S105
 TOKEN_PLACEHOLDER = "<!--VERDIKT_TOKEN-->"  # noqa: S105
@@ -41,6 +42,11 @@ CSP = (
     "img-src 'self' data:; font-src 'self' data:; connect-src 'self'; "
     "frame-ancestors 'none'; base-uri 'none'; form-action 'none'"
 )
+
+
+class FeedbackRequest(BaseModel):
+    label: Literal["false_positive", "false_negative", "correct"]
+    note: str = Field(default="", max_length=500)
 
 
 class CheckRequest(BaseModel):
@@ -144,6 +150,29 @@ def create_app(
         if found is None:
             raise HTTPException(status_code=404, detail="report not found")
         return found if raw else found.without_raw()
+
+    @app.get("/api/reports/{report_id}/stix")
+    async def report_stix(report_id: str, engine: EngineDep) -> JSONResponse:
+        found = engine.cache.get_report(report_id)
+        if found is None:
+            raise HTTPException(status_code=404, detail="report not found")
+        return JSONResponse(to_stix(found), media_type="application/stix+json")
+
+    @app.post("/api/reports/{report_id}/feedback", response_model=FeedbackEntry)
+    async def add_feedback(
+        report_id: str, body: FeedbackRequest, engine: EngineDep
+    ) -> FeedbackEntry:
+        found = engine.cache.get_report(report_id)
+        if found is None:
+            raise HTTPException(status_code=404, detail="report not found")
+        entry = engine.cache.add_feedback(found, body.label, body.note)
+        if engine.audit:
+            engine.audit.feedback(entry)
+        return entry
+
+    @app.get("/api/feedback", response_model=list[FeedbackEntry])
+    async def feedback(engine: EngineDep) -> list[FeedbackEntry]:
+        return engine.cache.list_feedback()
 
     @app.get("/api/sources", response_model=list[SourceInfo])
     async def sources(engine: EngineDep) -> list[SourceInfo]:

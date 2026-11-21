@@ -13,7 +13,7 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
-from verdikt.models import Model, Report, SourceResult
+from verdikt.models import Model, Report, SeenBefore, SourceResult
 
 Clock = Callable[[], datetime]
 
@@ -25,6 +25,13 @@ CREATE TABLE IF NOT EXISTS reports (
   id TEXT PRIMARY KEY, ioc TEXT NOT NULL, ioc_type TEXT NOT NULL, level TEXT NOT NULL,
   created_at TEXT NOT NULL, body TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS reports_created ON reports (created_at DESC);
+CREATE TABLE IF NOT EXISTS ioc_index (
+  report_id TEXT NOT NULL, kind TEXT NOT NULL, value TEXT NOT NULL,
+  PRIMARY KEY (report_id, value));
+CREATE INDEX IF NOT EXISTS ioc_index_value ON ioc_index (value);
+CREATE TABLE IF NOT EXISTS feedback (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, report_id TEXT NOT NULL, ioc TEXT NOT NULL,
+  level TEXT NOT NULL, label TEXT NOT NULL, note TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS budget (
   source TEXT NOT NULL, day TEXT NOT NULL, used INTEGER NOT NULL,
   PRIMARY KEY (source, day));
@@ -32,6 +39,9 @@ CREATE TABLE IF NOT EXISTS budget (
 
 
 REPORT_RETENTION = timedelta(days=90)
+CACHE_MAX_AGE = timedelta(days=7)  # longest source TTL: older cached answers can never be served
+FEEDBACK_LABELS = ("false_positive", "false_negative", "correct")
+_CORRELATE_MAX = 10
 _NO_LIMIT = 2**62  # sqlite INTEGER max is 2**63 - 1
 
 
@@ -47,22 +57,63 @@ class ReportSummary(Model):
     created_at: datetime
 
 
+class FeedbackEntry(Model):
+    id: int
+    report_id: str
+    ioc: str
+    level: str
+    label: str
+    note: str
+    created_at: datetime
+
+
 class Cache:
-    def __init__(self, path: Path | str, clock: Clock = _utcnow) -> None:
+    def __init__(
+        self,
+        path: Path | str,
+        clock: Clock = _utcnow,
+        report_retention: timedelta | None = REPORT_RETENTION,
+    ) -> None:
+        """`report_retention=None` keeps reports forever."""
         if str(path) != ":memory:":
             Path(path).parent.mkdir(parents=True, exist_ok=True)
         self._db = sqlite3.connect(str(path), check_same_thread=False)
         self._lock = threading.Lock()
         self._clock = clock
+        self._retention = report_retention
         with self._lock:
             self._db.executescript(_SCHEMA)
-            self._prune_reports()
+            self._prune()
 
-    def _prune_reports(self) -> None:
-        """Drop history past retention; reports carry full vendor payloads and only grow."""
-        cutoff = (self._clock() - REPORT_RETENTION).isoformat()
+    def _prune(self) -> dict[str, int]:
+        """Drop what can never be used again. Reports carry full vendor payloads and only grow.
+
+        Feedback is kept: it stores its own copy of the IOC and level.
+        """
+        now = self._clock()
+        counts: dict[str, int] = {}
         with self._db:
-            self._db.execute("DELETE FROM reports WHERE created_at < ?", (cutoff,))
+            if self._retention is not None:
+                cutoff = (now - self._retention).isoformat()
+                cur = self._db.execute("DELETE FROM reports WHERE created_at < ?", (cutoff,))
+                counts["reports"] = cur.rowcount
+            self._db.execute(
+                "DELETE FROM ioc_index WHERE report_id NOT IN (SELECT id FROM reports)"
+            )
+            cur = self._db.execute(
+                "DELETE FROM source_cache WHERE fetched_at < ?",
+                ((now - CACHE_MAX_AGE).isoformat(),),
+            )
+            counts["source_cache"] = cur.rowcount
+            cur = self._db.execute(
+                "DELETE FROM budget WHERE day < ?", ((now - CACHE_MAX_AGE).date().isoformat(),)
+            )
+            counts["budget"] = cur.rowcount
+        return counts
+
+    def prune(self) -> dict[str, int]:
+        with self._lock:
+            return self._prune()
 
     def close(self) -> None:
         with self._lock:
@@ -113,6 +164,68 @@ class Cache:
                     report.model_dump_json(),
                 ),
             )
+            self._db.execute("DELETE FROM ioc_index WHERE report_id=?", (report.id,))
+            seen = {(report.ioc_type.value, report.ioc)}
+            seen |= {(n.kind, n.label) for n in report.graph.nodes if n.kind != "asn"}
+            self._db.executemany(
+                "INSERT OR IGNORE INTO ioc_index VALUES (?,?,?)",
+                [(report.id, kind, value) for kind, value in seen],
+            )
+
+    # --- analyst feedback ---------------------------------------------------
+    def add_feedback(self, report: Report, label: str, note: str = "") -> FeedbackEntry:
+        if label not in FEEDBACK_LABELS:
+            raise ValueError(f"label must be one of {FEEDBACK_LABELS}")
+        now = self._clock()
+        with self._lock, self._db:
+            cur = self._db.execute(
+                "INSERT INTO feedback (report_id, ioc, level, label, note, created_at) "
+                "VALUES (?,?,?,?,?,?)",
+                (report.id, report.ioc, report.level.value, label, note, now.isoformat()),
+            )
+            fid = int(cur.lastrowid or 0)
+        return FeedbackEntry(
+            id=fid,
+            report_id=report.id,
+            ioc=report.ioc,
+            level=report.level.value,
+            label=label,
+            note=note,
+            created_at=now,
+        )
+
+    def list_feedback(self, limit: int = 200) -> list[FeedbackEntry]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id, report_id, ioc, level, label, note, created_at FROM feedback "
+                "ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [
+            FeedbackEntry.model_validate(dict(zip(FeedbackEntry.model_fields, r, strict=True)))
+            for r in rows
+        ]
+
+    def correlate(self, report: Report) -> list[SeenBefore]:
+        """Earlier reports sharing the IOC or a related indicator (ASNs excluded: too common)."""
+        values = {report.ioc} | {n.label for n in report.graph.nodes if n.kind != "asn"}
+        marks = ",".join("?" * len(values))
+        # `marks` is only "?" placeholders; values are bound, never interpolated
+        sql = (
+            "SELECT r.id, r.ioc, r.level, r.created_at, i.value FROM ioc_index i "  # noqa: S608
+            "JOIN reports r ON r.id = i.report_id "
+            f"WHERE i.value IN ({marks}) AND i.report_id != ? ORDER BY r.created_at DESC"
+        )
+        with self._lock:
+            rows = self._db.execute(sql, (*values, report.id)).fetchall()
+        found: dict[str, SeenBefore] = {}
+        for rid, ioc, level, created, value in rows:
+            entry = found.setdefault(
+                rid,
+                SeenBefore(report_id=rid, ioc=ioc, level=level, created_at=created),
+            )
+            entry.shared.append(value)
+        return list(found.values())[:_CORRELATE_MAX]
 
     def get_report(self, report_id: str) -> Report | None:
         with self._lock:

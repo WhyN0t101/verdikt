@@ -8,7 +8,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # 2: added Report.confidence and Report.seen_before
 
 
 class IOCType(StrEnum):
@@ -22,6 +22,14 @@ class IOCType(StrEnum):
     @property
     def is_hash(self) -> bool:
         return self in (IOCType.MD5, IOCType.SHA1, IOCType.SHA256)
+
+
+class Confidence(StrEnum):
+    """How much weighted evidence backs the verdict (see rules.yaml `weights`)."""
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
 
 
 class Status(StrEnum):
@@ -118,6 +126,16 @@ class Graph(Model):
     edges: list[GraphEdge] = Field(default_factory=list[GraphEdge])
 
 
+class SeenBefore(Model):
+    """An earlier report that shares an indicator with this one."""
+
+    report_id: str
+    ioc: str
+    level: Level
+    created_at: datetime
+    shared: list[str] = Field(default_factory=list[str])  # indicators in common
+
+
 class Report(Model):
     schema_version: int = SCHEMA_VERSION
     id: str
@@ -126,10 +144,12 @@ class Report(Model):
     level: Level  # MALICIOUS | SUSPICIOUS | SAFE | UNKNOWN
     agreeing: int
     total: int
+    confidence: Confidence = Confidence.LOW
     reasons: list[str] = Field(default_factory=list)
     results: list[SourceResult] = Field(default_factory=list[SourceResult])
     geo: list[GeoPoint] = Field(default_factory=list[GeoPoint])
     graph: Graph = Field(default_factory=Graph)
+    seen_before: list[SeenBefore] = Field(default_factory=list[SeenBefore])
     duration_ms: int = 0
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 

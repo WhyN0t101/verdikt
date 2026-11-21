@@ -18,3 +18,16 @@ benign_override:                # downgrade SUSPICIOUS -> SAFE; never touches MA
 context_only: [internetdb, greynoise]   # rows get INFO, never count toward min_sources_for_safe
 high_weight: [virustotal, threatfox, urlhaus, malwarebazaar]
 min_sources_for_safe: 2
+min_high_weight_for_safe: 1     # SAFE needs this many successful high-weight sources
+weights:                        # evidence weight per source -> Report.confidence (never the level)
+  virustotal: 3
+  threatfox: 3
+  urlhaus: 3
+  malwarebazaar: 3
+  abuseipdb: 2
+  hybrid: 2
+  urlscan: 1
+  otx: 1
+default_weight: 1
+confidence_high: 5              # agreeing weight >= this -> high
+confidence_medium: 3            # agreeing weight >= this -> medium, below -> low

@@ -21,6 +21,9 @@ Responses also carry a strict `Content-Security-Policy` (scripts and connections
 | POST | `/api/check` | Body `{"ioc": "...", "no_cache": false}`; returns a `Report` (vendor `raw` stripped) |
 | GET | `/api/reports?limit=50&offset=0` | History list, newest first (`limit` 1 to 200) |
 | GET | `/api/reports/{id}?raw=false` | One stored report; `raw=true` keeps vendor raw responses |
+| GET | `/api/reports/{id}/stix` | The report as a STIX 2.1 bundle (`Content-Type: application/stix+json`) |
+| POST | `/api/reports/{id}/feedback` | Body `{"label": "false_positive" \| "false_negative" \| "correct", "note": ""}` (note up to 500 characters); returns the stored entry |
+| GET | `/api/feedback` | Stored feedback, newest first |
 | GET | `/api/sources` | Per source: `name`, `enabled`, `requires_key`, `supports`, `used_today`, `daily_budget` |
 | GET | `/api/health` | `{"status": "ok"}` |
 | GET | `/` and `/assets/*` | The built single-page app |
@@ -46,10 +49,12 @@ Without the token header the same call returns `401`.
 
 | Field | Meaning |
 |---|---|
-| `schema_version` | Integer, currently 1 |
+| `schema_version` | Integer, currently 2 |
 | `id` | UUID4 hex |
 | `ioc`, `ioc_type` | Normalized indicator and its type (`ip`, `domain`, `url`, `md5`, `sha1`, `sha256`) |
 | `level` | `malicious`, `suspicious`, `safe` or `unknown` (never `info`) |
+| `confidence` | `low`, `medium` or `high`: weighted agreement with `level` (see `rules.yaml`). Never changes `level` |
+| `seen_before` | Earlier reports sharing this indicator or related infrastructure: `report_id`, `ioc`, `level`, `created_at`, `shared` |
 | `agreeing`, `total` | Verdict-bearing sources that agree with `level`, out of those that answered successfully |
 | `reasons` | Human-readable lines, one per rule that fired |
 | `results` | One `SourceResult` per queried source: `source`, `status`, `metrics`, `level`, `summary`, `tags`, `link`, `related`, `cached`, `fetched_at`, `raw` |

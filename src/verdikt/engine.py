@@ -8,11 +8,12 @@ import logging
 import time
 import uuid
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 from aiolimiter import AsyncLimiter
 
+from verdikt.audit import AuditLog
 from verdikt.cache import Cache
 from verdikt.config import Rules, Settings, load_rules
 from verdikt.detect import detect
@@ -93,6 +94,7 @@ class Engine:
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         backoff: float = BACKOFF,
         resolver: Resolver = dns_enrich.resolve,
+        audit: AuditLog | None = None,
     ) -> None:
         self.settings = settings
         self.rules = rules
@@ -106,6 +108,7 @@ class Engine:
         self._sleep = sleep
         self._backoff = backoff
         self._resolver = resolver
+        self.audit = audit
 
     # --- helpers ------------------------------------------------------------
     def _limiter(self, src: Source) -> Limiter:
@@ -200,6 +203,7 @@ class Engine:
             level=decision.level,
             agreeing=decision.agreeing,
             total=decision.total,
+            confidence=decision.confidence,
             reasons=decision.reasons,
             results=decision.results,
             geo=geo,
@@ -207,7 +211,10 @@ class Engine:
             duration_ms=int((time.perf_counter() - started) * 1000),
             created_at=datetime.now(UTC),
         )
+        report = report.model_copy(update={"seen_before": self.cache.correlate(report)})
         self.cache.save_report(report)
+        if self.audit:
+            self.audit.check(report)
         return report
 
     def _geo_points(self, ioc: IOC, level: Level, related: list[RelatedIOC]) -> list[GeoPoint]:
@@ -235,4 +242,8 @@ class Engine:
 def build_engine(settings: Settings, http: httpx.AsyncClient) -> Engine:
     """Engine wired from settings: rules.yaml (or override), sqlite cache, built-in sources."""
     rules = load_rules(settings.rules_path)
-    return Engine(settings, rules, Cache(settings.resolved_db_path), http)
+    days = settings.report_retention_days
+    cache = Cache(
+        settings.resolved_db_path, report_retention=timedelta(days=days) if days > 0 else None
+    )
+    return Engine(settings, rules, cache, http, audit=AuditLog(settings.resolved_audit_path))

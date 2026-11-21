@@ -11,6 +11,7 @@ from verdikt.api.app import create_app
 from verdikt.cache import Cache
 from verdikt.config import Settings, load_rules
 from verdikt.engine import Engine
+from verdikt.models import SCHEMA_VERSION
 from verdikt.sources.base import Source
 
 TOKEN = "t0ken"
@@ -78,7 +79,7 @@ async def test_check_happy_path(api: httpx.AsyncClient) -> None:
     assert r.status_code == 200
     body = r.json()
     assert body["level"] == "malicious"
-    assert body["schema_version"] == 1
+    assert body["schema_version"] == SCHEMA_VERSION
     assert body["results"][0]["raw"] is None
 
 

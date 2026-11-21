@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json as _json
 import os
 import secrets
 import sys
@@ -23,6 +24,7 @@ from verdikt.detect import DetectError
 from verdikt.engine import Engine, build_engine
 from verdikt.models import Level, Report, Status
 from verdikt.notify import Platform, notify
+from verdikt.stix import to_stix
 
 app = typer.Typer(add_completion=False, no_args_is_help=True, help="IOC triage.")
 cache_app = typer.Typer(help="Cache maintenance.")
@@ -128,6 +130,7 @@ def check(
     ioc: Annotated[str, typer.Argument(help="IP, domain, URL or hash (defanged input is fine)")],
     json: Annotated[bool, typer.Option("--json", help="Print the Report as JSON")] = False,
     raw: Annotated[bool, typer.Option("--raw", help="Keep vendor `raw` payloads")] = False,
+    stix: Annotated[bool, typer.Option("--stix", help="Print a STIX 2.1 bundle instead")] = False,
     no_cache: Annotated[bool, typer.Option("--no-cache", help="Bypass cached results")] = False,
     notify_to: Annotated[
         Platform | None, typer.Option("--notify", help="slack or telegram")
@@ -150,7 +153,10 @@ def check(
     except DetectError as exc:
         err.print(f"error: {exc}", markup=False)
         raise typer.Exit(1) from exc
-    _emit(report, json, raw)
+    if stix:
+        sys.stdout.write(_json.dumps(to_stix(report), indent=2) + "\n")
+    else:
+        _emit(report, json, raw)
     if _all_failed(report):
         err.print("error: no source answered (check keys in .env and your network)", markup=False)
         raise typer.Exit(1)

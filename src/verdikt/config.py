@@ -20,6 +20,12 @@ class Rules(BaseModel):
     context_only: list[str] = Field(default_factory=list)
     high_weight: list[str] = Field(default_factory=list)
     min_sources_for_safe: int = 2
+    min_high_weight_for_safe: int = 1
+    # evidence weight per source; drives Report.confidence, never the verdict level
+    weights: dict[str, int] = Field(default_factory=dict[str, int])
+    default_weight: int = 1
+    confidence_high: int = 5
+    confidence_medium: int = 3
 
 
 def user_data_dir() -> Path:
@@ -52,6 +58,8 @@ class Settings(BaseSettings):
     db_path: Path | None = None
     rules_path: Path | None = None
     dns_resolve: bool = False
+    report_retention_days: int = 90  # 0 keeps reports forever
+    audit_log: Path | None = None
 
     @property
     def internal_domain_list(self) -> list[str]:
@@ -60,6 +68,10 @@ class Settings(BaseSettings):
     @property
     def resolved_db_path(self) -> Path:
         return self.db_path or user_data_dir() / "verdikt.db"
+
+    @property
+    def resolved_audit_path(self) -> Path:
+        return self.audit_log or user_data_dir() / "audit.jsonl"
 
     def key(self, name: str) -> str | None:
         """Secret value for a settings field, or None when unset."""

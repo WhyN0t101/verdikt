@@ -55,6 +55,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reports/{report_id}/stix": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Report Stix */
+        get: operations["report_stix_api_reports__report_id__stix_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reports/{report_id}/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Feedback */
+        post: operations["add_feedback_api_reports__report_id__feedback_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/feedback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Feedback */
+        get: operations["feedback_api_feedback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/sources": {
         parameters: {
             query?: never;
@@ -102,6 +153,45 @@ export interface components {
              * @default false
              */
             no_cache: boolean;
+        };
+        /**
+         * Confidence
+         * @description How much weighted evidence backs the verdict (see rules.yaml `weights`).
+         * @enum {string}
+         */
+        Confidence: "low" | "medium" | "high";
+        /** FeedbackEntry */
+        FeedbackEntry: {
+            /** Id */
+            id: number;
+            /** Report Id */
+            report_id: string;
+            /** Ioc */
+            ioc: string;
+            /** Level */
+            level: string;
+            /** Label */
+            label: string;
+            /** Note */
+            note: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** FeedbackRequest */
+        FeedbackRequest: {
+            /**
+             * Label
+             * @enum {string}
+             */
+            label: "false_positive" | "false_negative" | "correct";
+            /**
+             * Note
+             * @default
+             */
+            note: string;
         };
         /** GeoPoint */
         GeoPoint: {
@@ -193,7 +283,7 @@ export interface components {
         Report: {
             /**
              * Schema Version
-             * @default 1
+             * @default 2
              */
             schema_version: number;
             /** Id */
@@ -206,6 +296,8 @@ export interface components {
             agreeing: number;
             /** Total */
             total: number;
+            /** @default low */
+            confidence: components["schemas"]["Confidence"];
             /** Reasons */
             reasons: string[];
             /** Results */
@@ -213,6 +305,8 @@ export interface components {
             /** Geo */
             geo: components["schemas"]["GeoPoint"][];
             graph: components["schemas"]["Graph"];
+            /** Seen Before */
+            seen_before: components["schemas"]["SeenBefore"][];
             /**
              * Duration Ms
              * @default 0
@@ -239,6 +333,24 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /**
+         * SeenBefore
+         * @description An earlier report that shares an indicator with this one.
+         */
+        SeenBefore: {
+            /** Report Id */
+            report_id: string;
+            /** Ioc */
+            ioc: string;
+            level: components["schemas"]["Level"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Shared */
+            shared: string[];
         };
         /** SourceInfo */
         SourceInfo: {
@@ -423,6 +535,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    report_stix_api_reports__report_id__stix_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    add_feedback_api_reports__report_id__feedback_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FeedbackRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackEntry"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    feedback_api_feedback_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedbackEntry"][];
                 };
             };
         };

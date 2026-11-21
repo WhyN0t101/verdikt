@@ -23,6 +23,8 @@ The core is a Python library that returns a single `Report` model. The CLI, the 
 - [How the verdict is decided](#how-the-verdict-is-decided)
 - [Input handling and privacy](#input-handling-and-privacy)
 - [Notifications](#notifications)
+- [Audit log and SIEM](#audit-log-and-siem)
+- [STIX export](#stix-export)
 - [Caching, rate limits and daily budgets](#caching-rate-limits-and-daily-budgets)
 - [Development](#development)
 - [Project layout](#project-layout)
@@ -68,6 +70,8 @@ Secrets and paths come from `.env` in the working directory (copy `.env.example`
 | `VERDIKT_DB_PATH` | SQLite file for the cache, history and budgets. Default: the user data directory (`%LOCALAPPDATA%\verdikt` on Windows, `~/.local/share/verdikt` elsewhere), never the repository |
 | `VERDIKT_RULES_PATH` | Path to a `rules.yaml` that replaces the packaged default |
 | `VERDIKT_DNS_RESOLVE` | `true` enables DNS resolution of domains (default `false`, see [privacy](#input-handling-and-privacy)) |
+| `VERDIKT_REPORT_RETENTION_DAYS` | Stored reports older than this many days are deleted at startup (default `90`; `0` keeps them forever). Expired cache rows and old budget rows are always deleted. Analyst feedback is kept |
+| `VERDIKT_AUDIT_LOG` | Path of the JSON-lines audit log. Default: `audit.jsonl` in the user data directory |
 | `VERDIKT_SESSION_TOKEN` | Fixed API token for `verdikt ui`, for automation that calls a long-running instance. Unset: a random token per run |
 
 `.env` is git-ignored. Keys are never logged, never returned by the API and never placed in URLs, with one unavoidable exception: Telegram requires the bot token in the request path.
@@ -77,7 +81,7 @@ GeoLite2 needs a free MaxMind account and periodic updates (`geoipupdate`). The 
 ## Command line
 
 ```bash
-uv run verdikt check <ioc> [--json] [--raw] [--no-cache] [--notify slack|telegram] [--min-level suspicious]
+uv run verdikt check <ioc> [--json] [--stix] [--raw] [--no-cache] [--notify slack|telegram] [--min-level suspicious]
 uv run verdikt bulk <file> [--json] [--notify slack|telegram] [--min-level suspicious]
 uv run verdikt sources
 uv run verdikt cache clear [--source NAME]
@@ -116,6 +120,8 @@ Input may be defanged (`hxxp://evil[.]com`, `1[.]2[.]3[.]4`); it is refanged fir
 - **Sources table:** one row per source with its level, a one-line result, tags and a link to the source's own page. Rows show a placeholder while a check is running.
 - **Source log:** one line per source answer with its timestamp, coloured by level.
 - **History:** previous checks grouped by level. Click one to reopen it.
+- **Seen before:** earlier reports that share this indicator or its related infrastructure (IPs, domains, URLs, hashes, malware families; ASNs are ignored because they are too common). Click one to reopen it.
+- **Feedback and export:** "False positive" and "False negative" record your judgement of a verdict (stored locally, kept after reports expire, included in the audit log); "Export STIX" downloads the report as a STIX 2.1 bundle.
 - **Map tab (key `1`):** a dot-matrix world map drawn from a bundled data file, so it makes no map requests. The indicator and related IPs are markers; arcs join the indicator to related infrastructure. Locations are approximate. Click a related marker to check that IP. It needs the GeoLite2 databases.
 - **Graph tab (key `2`):** indicators and related infrastructure (IPs, domains, URLs, hashes, malware families, ASNs) with labelled edges. Select a node and choose "Check this IOC" to pivot; each pivot spends source quota and the panel shows what is left.
 - **Raw JSON tab (key `3`):** the full stored report including vendor raw responses, as text.
@@ -130,8 +136,10 @@ Each source reports plain facts (counts, scores, booleans) as `metrics`. It neve
 1. Each successful row becomes MALICIOUS, SUSPICIOUS or SAFE from the rules. Context-only sources (InternetDB, GreyNoise) become INFO.
 2. Any MALICIOUS row makes the verdict MALICIOUS.
 3. Any SUSPICIOUS row makes it SUSPICIOUS, unless a benign override matches (GreyNoise `riot`), which gives SAFE. An override never touches MALICIOUS.
-4. Otherwise the verdict is SAFE only if at least `min_sources_for_safe` (default 2) verdict-bearing sources answered successfully, and no high-weight source (VirusTotal, ThreatFox, URLhaus, MalwareBazaar) returned an error or was rate limited.
+4. Otherwise the verdict is SAFE only if at least `min_sources_for_safe` (default 2) verdict-bearing sources answered successfully, at least `min_high_weight_for_safe` (default 1) of them are high-weight sources (VirusTotal, ThreatFox, URLhaus, MalwareBazaar), and no high-weight source returned an error, was rate limited or had no record. Weak sources alone never give SAFE.
 5. Otherwise it is UNKNOWN.
+
+Every report also carries a `confidence` of low, medium or high. It is the summed `weights` (in `rules.yaml`) of the sources that agree with the verdict, compared with `confidence_high` and `confidence_medium`; conflicting evidence at least as heavy as the agreeing evidence, or an `unknown` verdict, gives low. Confidence never changes the verdict.
 
 Errors and rate limits never count as clean. A source that has no record of the indicator (`not found`) is neither clean nor an error: it does not count towards `min_sources_for_safe` and does not block SAFE.
 
@@ -154,8 +162,17 @@ verdikt takes care not to leak what you investigate.
 
 `--notify slack` or `--notify telegram` posts the result when its level is at or above `--min-level` (default `suspicious`). The order is SAFE, UNKNOWN, SUSPICIOUS, MALICIOUS. The message has a level icon, the defanged indicator and type, one line per source that hit, and a link to the VirusTotal or urlscan page. Feed-derived text is escaped before sending (HTML escaping for Telegram, `&`, `<`, `>` for Slack). A failed send is reported in the CLI output, never silently dropped, and never includes the webhook URL or token.
 
+## Audit log and SIEM
+
+Every check and every piece of feedback appends one JSON line to `audit.jsonl` in the user data directory (override with `VERDIKT_AUDIT_LOG`). Point a SIEM agent (Filebeat, Splunk forwarder, Wazuh and similar) at the file. A check event has `ts`, `event`, `report_id`, the defanged `ioc`, `ioc_type`, `level`, `confidence`, `agreeing`, `total`, `duration_ms`, `seen_before` (count) and one entry per source with `status`, `level` and `cached`. The log holds no keys, no vendor raw data and no feed-derived text. A failed write is logged as a warning and never fails a check. There is no rotation; rotate the file externally.
+
+## STIX export
+
+`verdikt check <ioc> --stix` prints a STIX 2.1 bundle, and the UI and `GET /api/reports/{id}/stix` return the same for a stored report. The bundle holds an identity (`verdikt`), one indicator (pattern for the indicator type, `indicator_types` from the verdict level, `confidence` 85, 50 or 15 from the low/medium/high confidence) and a malware object with an `indicates` relationship for each malware family found. Object ids are stable per report. It is plain JSON built without a STIX library, so it is not validated against the full STIX schema.
+
 ## Caching, rate limits and daily budgets
 
+- At startup verdikt deletes what can no longer be used: cached answers older than 7 days (the longest source TTL), daily-budget rows older than 7 days, and stored reports older than `VERDIKT_REPORT_RETENTION_DAYS` (default 90, `0` keeps them). Analyst feedback is kept.
 - Answers are cached in SQLite per source and indicator with a time to live per source (6 hours to 7 days). Errors and rate-limited answers are never cached. The raw vendor response is always stored, so `--raw` works on a cache hit.
 - Each source has its own rate limiter (VirusTotal: 4 requests per minute). Sources with a published daily quota have a daily budget (VirusTotal 500, AbuseIPDB 1000, Hybrid Analysis 200, urlscan 1000) counted per UTC day.
 - Every attempt, including each retry, takes a limiter slot and is charged to the daily budget. Rate-limited and server-error answers are retried up to 3 times. A `Retry-After` longer than the 10 second timeout is not waited on: the source reports `rate limited` immediately.

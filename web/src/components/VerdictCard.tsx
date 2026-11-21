@@ -76,6 +76,7 @@ export function Diagnostics({ report }: { report: Report | null }) {
         ["Type", typeTag(report.ioc_type)],
         ["ASN", geo?.asn ? `AS${geo.asn}${geo.as_org ? ` ${geo.as_org}` : ""}` : "-"],
         ["Country", geo?.country ?? "-"],
+        ["Evidence", `${report.confidence} confidence`],
         ["Lookup", formatDuration(report.duration_ms)],
       ]
     : [];

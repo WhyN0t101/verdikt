@@ -7,5 +7,7 @@ export type Graph = S["Graph"];
 export type GraphNode = S["GraphNode"];
 export type ReportSummary = S["ReportSummary"];
 export type SourceInfo = S["SourceInfo"];
+export type Confidence = S["Confidence"];
+export type FeedbackLabel = "false_positive" | "false_negative" | "correct";
 export type Level = S["Level"];
 export type IOCType = S["IOCType"];

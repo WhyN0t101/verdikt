@@ -13,7 +13,7 @@ from verdikt import cli
 from verdikt.cache import Cache
 from verdikt.config import Settings, load_rules
 from verdikt.engine import Engine
-from verdikt.models import Status
+from verdikt.models import SCHEMA_VERSION, Status
 from verdikt.sources.base import Source
 
 runner = CliRunner()
@@ -98,7 +98,7 @@ def test_json_output_strips_raw_unless_asked(use_profile: UseProfile) -> None:
     use_profile("malicious")
     plain = json.loads(runner.invoke(cli.app, ["check", "8.8.8.8", "--json"]).stdout)
     assert plain["level"] == "malicious"
-    assert plain["schema_version"] == 1
+    assert plain["schema_version"] == SCHEMA_VERSION
     assert plain["results"][0]["raw"] is None
     raw = json.loads(runner.invoke(cli.app, ["check", "8.8.8.8", "--json", "--raw"]).stdout)
     assert raw["results"][0]["raw"] == {"fake": True}
@@ -162,3 +162,12 @@ def test_render_survives_rich_markup_in_feed_data() -> None:
         agreeing=1, total=1, results=[row],
     )  # fmt: skip
     cli._render(report)  # pyright: ignore[reportPrivateUsage]  # must not raise MarkupError
+
+
+def test_stix_output(use_profile: UseProfile) -> None:
+    use_profile("malicious")
+    result = runner.invoke(cli.app, ["check", "8.8.8.8", "--stix"])
+    assert result.exit_code == 11
+    bundle = json.loads(result.stdout)
+    assert bundle["type"] == "bundle"
+    assert bundle["objects"][1]["pattern"] == "[ipv4-addr:value = '8.8.8.8']"
