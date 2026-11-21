@@ -77,8 +77,17 @@ Guiding rule: the core is a Python library that returns one JSON model. The CLI,
 | GreyNoise Community | ✓ | | | | optional | 24 h | benign override |
 | Shodan InternetDB | ✓ | | | | no | 7 d | context only |
 | Hybrid Analysis | | | | ✓ | yes | 7 d | medium |
+| `hashlookup` (CIRCL) | | | | ✓ | no | 7 d | softens SUSPICIOUS / flags `KnownMalicious` |
+| `rdap` (domain age) | | ✓ | | | no | 7 d | low (suspicious when under 30 days) |
+| `crtsh` (certificate transparency) | | ✓ | | | no, opt-in `VERDIKT_CRTSH` | 24 h | context only |
+| `passivedns` (VirusTotal resolutions) | ✓ | ✓ | | | VT key, opt-in `VERDIKT_VT_RESOLUTIONS` | 24 h | context only |
+| `localfeeds` (Feodo, Spamhaus DROP, Tor exits, Tranco, OpenPhish, imported MISP/STIX) | ✓ | ✓ | ✓ | ✓ | no, `verdikt feeds update` | local | blocklist (malicious) / top site (softens SUSPICIOUS) |
 
 "Context only" sources add data (ports, CVEs, ASN) but never change the verdict.
+
+Every source name above (`virustotal`, `abuseipdb`, `urlscan`, `threatfox`, `urlhaus`, `malwarebazaar`, `otx`, `greynoise`, `internetdb`, `hybrid`, `hashlookup`, `rdap`, `crtsh`, `passivedns`, `localfeeds`) is registered in `sources/__init__.py`; `tests/test_plan_sync.py` fails if a source is missing from this section.
+
+**VirusTotal metrics.** Besides the engine counts (`malicious`, `suspicious`, `harmless`, `undetected`, `total`) the VT source reports `last_analysis_age_days` (whole days since `last_analysis_date`, never negative, omitted when the field is missing or not a JSON integer) and `reputation` (integer, may be negative, omitted when absent). No default rule reads them: they are shown in the UI "Why" panel and can be used in a private `rules.yaml` (rule keys are OR'ed, so a lone `last_analysis_age_days__lt` rule would flag every fresh scan: pair it with care). One engine hit on a months-old scan is weaker than one on a fresh scan, which is why the age is exposed.
 
 ---
 
@@ -87,41 +96,58 @@ Guiding rule: the core is a Python library that returns one JSON model. The CLI,
 ```
 verdikt/
 ├── pyproject.toml
-├── .env.example                 # every key, empty values
+├── .env.example                 # every key and setting, empty values
 ├── README.md
 ├── src/verdikt/
-│   ├── models.py                # IOCType, IOC, SourceResult, Report, GraphNode/Edge, GeoPoint
-│   ├── detect.py                # refang, normalize, classify, reject private IPs
-│   ├── config.py                # Settings (pydantic-settings), load rules.yaml
+│   ├── models.py                # IOCType, IOC, SourceResult, Report, Graph, GeoPoint, CveInfo, SeenBefore
+│   ├── detect.py                # refang, normalize, classify, reject private/internal targets
+│   ├── extract.py               # indicators from free text (ioc-finder + detect)
+│   ├── config.py                # Settings (pydantic-settings), Rules, load rules.yaml
 │   ├── rules.yaml               # default thresholds and weights
-│   ├── engine.py                # fan-out, timeouts, cache, assemble Report
-│   ├── verdict.py               # pure function: results + rules -> verdict, confidence
-│   ├── cache.py                 # sqlite: source cache, report history, daily budget
+│   ├── engine.py                # fan-out, timeouts, cache, enrichment, assemble Report
+│   ├── verdict.py               # pure function: results + rules -> verdict, confidence, why
+│   ├── cache.py                 # sqlite: source cache, reports, budget, stats, watchlist, cases,
+│   │                            #   feedback, ioc index, kv (scheduler last_run, notify cooldown)
+│   ├── watch.py                 # watchlist re-checks (4 at a time, errors are not changes)
+│   ├── scheduler.py             # in-process jobs for verdikt ui (watch, feeds), off by default
+│   ├── audit.py                 # JSON-lines audit log, rotates at 10 MB
+│   ├── stix.py  misp.py         # STIX 2.1 bundle and MISP event export
+│   ├── export.py                # Markdown / HTML report and case export
+│   ├── jsonutil.py              # typed accessors for untyped vendor JSON
 │   ├── sources/
-│   │   ├── base.py              # Source protocol + registry
-│   │   ├── virustotal.py  abuseipdb.py  urlscan.py
+│   │   ├── base.py              # Source protocol, Gate (limiter, budget, retries), BaseSource
+│   │   ├── virustotal.py  abuseipdb.py  urlscan.py  hybrid.py
 │   │   ├── threatfox.py   urlhaus.py    malwarebazaar.py
-│   │   └── otx.py  greynoise.py  internetdb.py  hybrid.py
+│   │   ├── otx.py  greynoise.py  internetdb.py  hashlookup.py
+│   │   ├── rdap.py  crtsh.py  passivedns.py
+│   │   ├── feeds.py             # local feeds: download, parse, match (LocalFeeds source)
+│   │   └── importers.py         # MISP event / STIX bundle -> local list
 │   ├── enrich/
 │   │   ├── geo.py               # GeoLite2 lookups
-│   │   └── dns.py               # optional resolution
+│   │   ├── dns.py               # optional resolution
+│   │   └── cve.py               # CISA KEV and EPSS for the CVEs InternetDB reports
 │   ├── notify/
-│   │   ├── format.py            # defang + message text
-│   │   ├── slack.py  telegram.py
+│   │   ├── __init__.py          # Slack, Telegram, Discord, Teams, email; Retry-After; cooldown
+│   │   └── format.py            # defang, escaping, message text
 │   ├── cli.py                   # typer app
 │   ├── api/app.py               # FastAPI routes + static mount
 │   └── web_dist/                # built SPA (generated, git-ignored)
 ├── web/                         # React app source
-│   └── src/
-│       ├── api.ts  types.ts     # types generated from OpenAPI
-│       ├── components/
-│       │   ├── CommandBar.tsx  VerdictCard.tsx  SourceTable.tsx
-│       │   ├── MapView.tsx  GraphView.tsx  RawJson.tsx  HistoryList.tsx
-│       └── styles/tokens.css
+│   ├── src/
+│   │   ├── api.ts  model.ts  types.ts   # types.ts is generated from OpenAPI
+│   │   ├── components/          # command bar, verdict panel, source table, map, graph, overview,
+│   │   │                        #   batch, cases, history, raw JSON (shared UI in components/ui)
+│   │   └── styles/tokens.css
+│   └── e2e/                     # Playwright, against scripts/e2e_server.py
+├── scripts/                     # dump_openapi.py, e2e_server.py
+├── integrations/                # Cortex analyzer, Shuffle app
+├── docs/                        # DESIGN, API, SOURCES, INTEGRATIONS, CODE_QUALITY
 └── tests/
-    ├── fixtures/<source>/*.json # recorded responses (hit, miss, error)
-    ├── test_detect.py  test_verdict.py  test_engine.py
-    ├── test_sources_<name>.py   test_api.py  test_notify.py  test_cli.py
+    ├── fixtures/<source>/*.json # recorded or hand-made responses (see fixtures/README.md)
+    ├── test_detect.py  test_verdict.py  test_engine.py  test_cache.py
+    ├── test_sources*.py  test_feeds.py  test_cve.py  test_notify.py
+    ├── test_api.py  test_cli.py  test_dashboard.py  test_cases.py  test_scheduler.py
+    ├── test_features.py  test_hardening.py  test_plan_sync.py
 ```
 
 ---
@@ -235,39 +261,52 @@ class Source(Protocol):
 ## 9. Verdict rules (`verdict.py` + `rules.yaml`)
 
 Rules are plain YAML structure validated by pydantic. No string expressions, no parser, no `eval`.
-Integer value = "metric ≥ value". Boolean value = "metric is that value".
+Integer value = "metric ≥ value". Boolean value = "metric is that value". A key ending in `__lt` flips the integer comparison: `age_days__lt: 30` means `age_days < 30`.
 
 ```yaml
+# Integer value = "metric >= value". Boolean value = "metric is that value".
+# Inside one source, keys are OR'ed.
 malicious:                      # any match -> MALICIOUS
   virustotal: {malicious: 5}
-  localfeeds: {blocklisted: true}   # Feodo C2 / Spamhaus DROP, matched locally
+  localfeeds: {blocklisted: true}      # Feodo C2 or Spamhaus DROP, matched locally
   abuseipdb: {score: 75}
   threatfox: {match: true}
   malwarebazaar: {match: true}
-  urlhaus: {url_online: true}   # exact URL listed and online; a host listing is only suspicious
+  urlhaus: {url_online: true}          # the exact URL is listed and online
 suspicious:                     # any match -> SUSPICIOUS
-  virustotal: {malicious: 1, suspicious: 1}
+  virustotal: {malicious: 2, suspicious: 1}   # one malicious engine alone is usually a false positive
   abuseipdb: {score: 25}
   hybrid: {malicious: true}
   hashlookup: {known_malicious: true}
+  urlhaus: {online: true}              # a host with an online listed URL: popular hosts have some
+  rdap: {age_days__lt: 30}            # registered in the last 30 days: weak, so weight 1
 benign_override:                # downgrade SUSPICIOUS -> SAFE; never touches MALICIOUS
   greynoise: {riot: true}
-  hashlookup: {known_good: true}    # known file with no malicious flag
-  localfeeds: {top_site: true}      # exact Tranco top-site match only
-# row level INFO, never count toward min_sources_for_safe. OTX pulse counts include mere mentions
-# (50 for example.com) and urlscan search has no verdicts on the free plan.
-context_only: [internetdb, greynoise, otx, urlscan]
+  hashlookup: {known_good: true}       # known file with no malicious flag
+  localfeeds: {top_site: true}         # exact Tranco top-site match only
+# rows get INFO, never count toward min_sources_for_safe. OTX counts every pulse that merely
+# mentions an indicator (50 for example.com) and urlscan search carries no verdicts on the free plan.
+context_only: [internetdb, greynoise, otx, urlscan, crtsh, passivedns]
 high_weight: [virustotal, threatfox, urlhaus, malwarebazaar]
 min_sources_for_safe: 2
-min_high_weight_for_safe: 1     # SAFE needs this many successful high-weight sources
-listing_feeds: [threatfox, urlhaus, malwarebazaar, localfeeds]   # "no match" = absence of evidence: weight 0, not a strong source
-weights: {virustotal: 3, threatfox: 3, urlhaus: 3, malwarebazaar: 3, abuseipdb: 2, hybrid: 2, hashlookup: 2, localfeeds: 3}
+# feeds that only list known-bad items: "no match" is absence of evidence, not evidence of safety
+listing_feeds: [threatfox, urlhaus, malwarebazaar, localfeeds]
+min_high_weight_for_safe: 1     # SAFE needs this many successful high-weight non-feed sources
+weights:                        # evidence weight per source -> Report.confidence (never the level)
+  virustotal: 3
+  threatfox: 3
+  urlhaus: 3
+  malwarebazaar: 3
+  abuseipdb: 2
+  hybrid: 2
+  hashlookup: 2
+  localfeeds: 3
 default_weight: 1
-confidence_high: 5              # agreeing weight >= 5 -> high
-confidence_medium: 3            # >= 3 -> medium, below -> low
+confidence_high: 5              # agreeing weight >= this -> high
+confidence_medium: 3            # agreeing weight >= this -> medium, below -> low
 ```
 
-Inside one source, keys are OR'ed (VT malicious ≥ 1 **or** suspicious ≥ 1).
+Inside one source, keys are OR'ed (VT malicious ≥ 2 **or** suspicious ≥ 1). `tests/test_plan_sync.py` fails if the yaml block above differs from `src/verdikt/rules.yaml`.
 
 Decision order in `decide()`:
 1. Row levels: each OK row gets MALICIOUS / SUSPICIOUS / SAFE from the same rules. Context-only sources (InternetDB, GreyNoise, geo) get INFO.
@@ -292,12 +331,24 @@ Decision order in `decide()`:
 ## 10. CLI (`cli.py`)
 
 ```
-verdikt check <ioc> [--json] [--raw] [--no-cache] [--notify slack|telegram] [--min-level suspicious]
-verdikt bulk <file> [--json] [--notify ...]      # one IOC per line, respects daily budget
-verdikt ui [--port 8765] [--no-open]
+verdikt check <ioc> [--json] [--raw] [--stix] [--misp] [--no-cache] [--notify slack|telegram|discord|teams|email] [--min-level suspicious]
+verdikt extract [FILE|-]                         # list the indicators in free text, nothing is looked up
+verdikt bulk <file> [--json] [--csv] [--text] [--resume] [--notify ...] [--min-level suspicious]
 verdikt sources                                  # list sources, enabled/disabled, quota left
+verdikt doctor                                   # what is configured and what is missing
+verdikt ui [--port 8765] [--no-open] [--dev]
 verdikt cache clear [--source NAME]
+verdikt feeds update [--top N]                   # download blocklists, Tor exits, Tranco, OpenPhish, KEV, EPSS
+verdikt feeds import <file> --name NAME [--all]  # MISP event or STIX bundle as a local blocklist
+verdikt feeds forget NAME
+verdikt feeds status
+verdikt watch add <ioc>
+verdikt watch list
+verdikt watch remove <ioc>
+verdikt watch run [--notify ...] [--min-level suspicious]   # re-check every entry, bypassing the cache
 ```
+
+`bulk` reads one IOC per line, or free text with `--text`; `--csv` prints one row per indicator (cells that start with `= + - @` get a leading apostrophe), `--resume` skips indicators checked in the last 24 hours. Cases have no CLI: they live in the UI and API (§12).
 
 Exit codes (kept off 1 and 2, which Python crashes and Click usage errors already use):
 
@@ -316,13 +367,14 @@ Exit codes (kept off 1 and 2, which Python crashes and Click usage errors alread
 
 ## 11. Notifications (`notify/`)
 
-- Slack: incoming webhook POST. Telegram: Bot API `sendMessage` (`parse_mode=HTML`).
-- Send only at or above `--min-level` (default `suspicious`).
+- Platforms: Slack (incoming webhook), Telegram (Bot API `sendMessage`, `parse_mode=HTML`), Discord (webhook; always `allowed_mentions: {parse: []}` so feed text cannot ping `@everyone`), Microsoft Teams (webhook), and email (stdlib `smtplib`: STARTTLS, or implicit TLS on port 465; login only after the channel is encrypted).
+- Send only at or above `--min-level` (default `suspicious`). `VERDIKT_NOTIFY_COOLDOWN_HOURS` (default 0 = off) skips a repeat alert for the same indicator at the same level.
 - Always defang IOCs in messages.
-- Escape all feed-derived text (tags, family names, summaries) before sending: Telegram via `html.escape()`; Slack by replacing `&` `<` `>` with `&amp;` `&lt;` `&gt;`. Otherwise `a<b` makes Telegram return 400 (alert lost) and `<https://evil|Open report>` renders as a fake Slack link.
-- A failed send is logged and reported in the CLI output, never swallowed.
+- Escape all feed-derived text (tags, family names, summaries) before sending: Telegram via `html.escape()`; Slack by replacing `&` `<` `>` with `&amp;` `&lt;` `&gt;`. Otherwise `a<b` makes Telegram return 400 (alert lost) and `<https://evil|Open report>` renders as a fake Slack link. Discord, Teams and email get the plain-text message with link-like tokens defanged.
+- **Rate limits.** Webhooks answer HTTP 429 under bursts (bulk runs, a big watch re-check). A 429 whose `Retry-After` (seconds or an HTTP date) is at most the notify timeout (10 s) is waited out and retried once; a longer one, a missing header, or a second 429 is reported as `rate limited (HTTP 429), retry after N s`. Nothing waits longer than the timeout. Other HTTP errors are not retried.
+- A failed send is logged and reported in the CLI output, never swallowed; the report never contains the webhook URL or bot token.
 - Message: level emoji + IOC + type, one line per source that hit, link to the VT/urlscan page.
-- Webhook URL and bot token live in `.env` only.
+- Credentials live in `.env` only: `VERDIKT_SLACK_WEBHOOK_URL`, `VERDIKT_TELEGRAM_BOT_TOKEN` + `VERDIKT_TELEGRAM_CHAT_ID`, `VERDIKT_DISCORD_WEBHOOK_URL`, `VERDIKT_TEAMS_WEBHOOK_URL`, `VERDIKT_SMTP_HOST` / `_PORT` / `_USER` / `_PASSWORD` / `_FROM` / `_TO`.
 
 ---
 
@@ -332,13 +384,32 @@ Exit codes (kept off 1 and 2, which Python crashes and Click usage errors alread
 |---|---|---|
 | POST | `/api/check` | Body `{ioc, no_cache}` → `Report` |
 | GET | `/api/reports` | History list (paged) |
-| GET | `/api/reports/{id}` | One stored report |
-| GET | `/api/reports/{id}/stix` | The report as a STIX 2.1 bundle (`application/stix+json`) |
-| POST | `/api/reports/{id}/feedback` | Body `{label: false_positive\|false_negative\|correct, note?}` → recorded entry |
+| GET | `/api/reports/{report_id}` | One stored report (`?raw=true` keeps vendor payloads) |
+| GET | `/api/reports/{report_id}/stix` | The report as a STIX 2.1 bundle (`application/stix+json`) |
+| GET | `/api/reports/{report_id}/misp` | The report as a MISP event JSON |
+| GET | `/api/reports/{report_id}/export` | `?format=md\|html`: shareable, defanged, escaped document |
+| POST | `/api/reports/{report_id}/feedback` | Body `{label: false_positive\|false_negative\|correct, note?}` → recorded entry |
 | GET | `/api/feedback` | Recorded analyst feedback, newest first |
 | GET | `/api/sources` | Source status, quota left |
 | GET | `/api/health` | Liveness |
+| GET | `/api/stats` | Dashboard data: checks per day, source health, recurring infrastructure, feedback counts |
+| GET, POST, DELETE | `/api/watchlist` | List with recent changes; watch a report's indicator (`{report_id}`); stop watching (`?ioc=`) |
+| POST | `/api/watchlist/recheck` | Re-check every entry now (bypasses the cache); returns the verdict changes |
+| GET | `/api/feeds` | Downloaded and imported feeds with entry counts |
+| POST | `/api/feeds/update` | Download the feeds |
+| POST, DELETE | `/api/feeds/import` | Import a MISP event or STIX bundle as a local list (`{name, content}`); remove one (`?name=`) |
+| POST | `/api/extract` | `{text}` → indicators found and skipped (internal targets); nothing is looked up |
+| GET, POST | `/api/cases` | List cases (`?tag=`); create one (`{title, notes?, tags?}`) |
+| GET, PATCH, DELETE | `/api/cases/{case_id}` | Read, update, delete a case |
+| POST | `/api/cases/{case_id}/reports` | Add a report (`{report_id}`); reports in a case survive retention |
+| DELETE | `/api/cases/{case_id}/reports/{report_id}` | Remove a report from the case |
+| GET | `/api/cases/{case_id}/export` | `?format=md\|html`: the whole case as one document |
+| GET | `/api/scheduler` | Jobs `watch` and `feeds`: interval, `running`, `progress` ("3/50"), last run and result |
+| POST | `/api/scheduler/{name}/run` | Run a job now and wait for it |
+| POST | `/api/scheduler/{name}/start` | Start a job in the background; poll `GET /api/scheduler` |
 | GET | `/*` | Built SPA (`web_dist/`) |
+
+`tests/test_plan_sync.py` fails if a route or method in the API schema is missing from this table, or a route here does not exist.
 
 Frontend TypeScript types are generated with `openapi-typescript` from the schema dumped offline by `scripts/dump_openapi.py` (`cd web && npm run gen:types`), because `/openapi.json` is token-gated at runtime. Backend and UI never drift.
 
