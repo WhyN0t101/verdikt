@@ -34,6 +34,7 @@ These come straight from CLAUDE.md. Any hit is fix now.
 |---|---|---|
 | No HTML injection in the SPA | `grep -rnE "dangerouslySetInnerHTML\|innerHTML\|eval\(" web/src` | no hits (eslint already blocks the first) |
 | Notifications escape feed text | read `src/verdikt/notify/format.py` | one line and every dot defanged on every feed-derived string; `html.escape` for Telegram, `&`, `<`, `>` (backtick, `*`, `~` removed) for Slack, `(` `)` swapped for `{` `}` for Discord and Teams |
+| Feed text is cleaned at the model boundary | `grep -n clean_text src/verdikt/models.py` | validators on `SourceResult.summary`, `tags`, `RelatedIOC.value`, `SeenBefore.shared`, `CveInfo.kev_*` and `GeoPoint` names; `raw` is the only field kept as received. No `model_copy(update=...)` sets one of those fields (it skips validators) |
 | Keys never reach logs, errors or URLs | `grep -rnE "api_key\|apikey\|x-apikey\|Auth-Key\|Authorization\|token" src/verdikt` and inspect each hit near `log`, `print`, `raise`, f-strings and `params=` | keys only in headers; no key in any message |
 | Exception text never carries a URL | every `except httpx.HTTPError` branch | message uses the exception class name only (httpx messages include the URL) |
 | API guard intact | read `src/verdikt/api/app.py` | Host check, constant-time token compare, JSON-only POST, no CORS headers, `127.0.0.1` bind |

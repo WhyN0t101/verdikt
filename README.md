@@ -100,7 +100,7 @@ uv run verdikt check <ioc> [--json] [--stix] [--raw] [--no-cache] [--notify slac
 uv run verdikt bulk <file> [--json] [--notify slack|telegram|discord|teams|email] [--min-level suspicious]
 uv run verdikt sources
 uv run verdikt cache clear [--source NAME]
-uv run verdikt feeds update | status        # download or inspect the local feeds
+uv run verdikt feeds update [--top N] | status   # download or inspect the local feeds (Tranco ranks kept, default 100000)
 uv run verdikt feeds import <file> --name N  # MISP event or STIX bundle as a local blocklist
 uv run verdikt feeds forget N                # remove an imported list
 uv run verdikt check <ioc> --misp            # MISP event JSON (--stix gives STIX 2.1)
@@ -119,7 +119,7 @@ uv run verdikt ui [--port 8765] [--no-open] [--dev]
 | `extract` | Lists the indicators found in free text (a file or `-` for stdin), defanged ones included. Nothing is looked up. |
 | `doctor` | Shows which sources are enabled, whether feeds and GeoIP are set up, which notifiers are configured and where the database and audit log live. |
 | `watch` | `add`, `list` and `remove` manage the watchlist; `run` re-checks every entry without the cache and records verdict changes (`--notify` sends them). |
-| `feeds` | `update` downloads the local feeds, `status` shows what is downloaded, `import` loads a MISP event or STIX bundle as a local blocklist (`--name`, `--all`) and `forget` removes one. |
+| `feeds` | `update` (`--top N` keeps that many Tranco ranks) downloads the local feeds, `status` shows what is downloaded, `import` loads a MISP event or STIX bundle as a local blocklist (`--name`, `--all`) and `forget` removes one. |
 | `ui` | Starts the local web UI on `127.0.0.1` only and opens a browser unless `--no-open`. `--dev` reloads on change and uses the fixed token `dev-token`. |
 
 Input may be defanged (`hxxp://evil[.]com`, `1[.]2[.]3[.]4`); it is refanged first. A leading `--` is handled safely, so an IOC that looks like an option cannot be misread.
@@ -143,16 +143,18 @@ Input may be defanged (`hxxp://evil[.]com`, `1[.]2[.]3[.]4`); it is refanged fir
 
 - **Command bar:** paste an indicator and press Enter. `Ctrl+K` (or `Cmd+K`) focuses it, `Esc` clears it.
 - **Verdict card:** level (always shown with an icon and text, never colour alone), the indicator, its type, confidence as `agreeing/total` sources, ASN, country, lookup time, and the reasons behind the verdict. The copy button copies the defanged indicator.
-- **Sources table:** one row per source with its level, a one-line result, tags and a link to the source's own page. Rows show a placeholder while a check is running.
+- **Sources table:** one row per source with its level, a one-line result, tags and a link to the source's own page (shown only for plain `http` or `https` addresses). Each row has a provenance line (`live, fetched 14:02:11` or `cached, fetched 5 h ago`, then the role and weight) and a "Why this counted" panel with the rules that fired. Rows show a placeholder while a check is running.
 - **Source log:** one line per source answer with its timestamp, coloured by level.
-- **History:** previous checks grouped by level. Click one to reopen it.
+- **History:** previous checks grouped by level; click one to reopen it. A search box (substring of the indicator), a Verdict and a Type filter and "Clear" narrow the list; "Load more" fetches the next 50 (it stays on screen and reads "No more reports" at the end); "Export list as CSV" downloads the loaded rows.
 - **Seen before:** earlier reports that share this indicator or its related infrastructure (IPs, domains, URLs, hashes, malware families; ASNs are ignored because they are too common). Click one to reopen it.
 - **Feedback and export:** "False positive" and "False negative" record your judgement of a verdict (stored locally, kept after reports expire, included in the audit log); "Export STIX" downloads the report as a STIX 2.1 bundle.
 - **Map tab (key `1`):** a dot-matrix world map drawn from a bundled data file, so it makes no map requests. The indicator and related IPs are markers; arcs join the indicator to related infrastructure. Locations are approximate. Click a related marker to check that IP. It needs the GeoLite2 databases.
 - **Graph tab (key `2`):** indicators and related infrastructure (IPs, domains, URLs, hashes, malware families, ASNs) with labelled edges. Select a node and choose "Check this IOC" to pivot; each pivot spends source quota and the panel shows what is left.
 - **Raw JSON tab (key `3`):** the full stored report including vendor raw responses, as text.
-- **Overview page:** activity, source health, watchlist, recurring infrastructure, feedback and feeds (see below).
-- **Batch page:** paste text, extract the indicators, check them all, export CSV.
+- **Changes since:** when the indicator was checked before, a block in the side panel shows what moved against the previous report: the verdict, each source whose status, level, summary or metrics changed, and reasons added or removed. A source that now errors or is rate limited is marked "No answer, not a clean result". Differences are never coloured as good or bad.
+- **Indicator history:** the reports of this exact indicator (a URL and its host are separate indicators), how often the verdict changed, the cases that hold them and its watch events. Nothing is shown for an indicator seen only once.
+- **Overview page:** activity, source health, watchlist, recurring infrastructure, feedback and feeds (see below). Each recent verdict change has a "What changed" button that opens that report.
+- **Batch page:** paste text, extract the indicators, check them all, export CSV. After a run a triage bar acts on the results you pick ("Which results": malicious and suspicious, malicious only, or all): "Add N to case" (an existing case or a new "Batch triage, <date>" case) and "Watch N" (shows the 50-entry cap and skips indicators already watched). Both run one at a time, can be stopped, and report what failed.
 - **Vulnerabilities:** CVEs found on a host with KEV and EPSS context.
 - **Theme:** dark by default, light follows the system setting or the toggle in the top bar.
 
@@ -283,6 +285,8 @@ src/verdikt/
   audit.py         JSON-lines audit log
   stix.py          STIX 2.1 export
   diff.py          pure diff of two stored reports
+  history.py       one indicator's reports, cases and watch events (pure assembly)
+  textutil.py      clean_text: the one rule for feed-derived text
   misp.py          MISP event export
   export.py        Markdown and HTML report and case exports
   scheduler.py     background watchlist and feed jobs inside `verdikt ui`

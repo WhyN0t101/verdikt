@@ -58,6 +58,8 @@ Rule semantics: an integer means "metric is at least this value", a boolean mean
 
 `query` never raises: the base class converts timeouts, network errors, odd JSON shapes and exhausted budgets into the statuses above.
 
+Text a source passes on (`summary`, `tags`, related values) is cleaned by the models, not by the source: tabs and line breaks become a space, and control, bidi, zero-width and tag characters are removed (`textutil.clean_text`), also when a cached or stored row is loaded. `raw` keeps the vendor payload as received.
+
 ## Notes per source
 
 - **VirusTotal v3.** Key goes in the `x-apikey` header. URLs are looked up by their URL-safe base64 id. Domains also yield their resolved IPs as related indicators; files yield a suggested threat label as a malware-family node.

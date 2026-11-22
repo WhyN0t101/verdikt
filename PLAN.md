@@ -14,7 +14,7 @@ Guiding rule: the core is a Python library that returns one JSON model. The CLI,
  (typer)    │                 └─► enrich (geo, dns)                 │
             │                 └─► verdict (rules.yaml)              │
  API ──────►│                 └─► cache (sqlite)                    │
- (FastAPI)  │ ──► Report (pydantic JSON)  ──► notify (slack/tg)     │
+ (FastAPI)  │ ──► Report (pydantic JSON)  ──► notify (5 channels)   │
    ▲        └───────────────────────────────────────────────────────┘
    │ JSON
  Browser UI (React SPA, served by FastAPI on 127.0.0.1)
@@ -37,7 +37,7 @@ Guiding rule: the core is a Python library that returns one JSON model. The CLI,
 | Retries | `tenacity` | Retry on 429/5xx, max 3. Every attempt takes a limiter slot and is charged to the daily budget. `Retry-After` longer than the source timeout → return `RATE_LIMITED`, don't wait |
 | Models | `pydantic` v2 | `Report` is the contract for CLI, API, UI |
 | Config | `pydantic-settings` (`.env`) + `rules.yaml` (parsed with `pyyaml`) | Missing key disables that source, never crashes |
-| IOC refang | `ioc-fanger` | `ioc-finder` later for "paste a whole ticket" mode |
+| IOC refang | `ioc-fanger` | `ioc-finder` finds indicators in free text (`extract.py`, `verdikt extract`, the Batch page) |
 | Geo/ASN | MaxMind GeoLite2 City + ASN (`maxminddb`) | Local lookups: no quota, no IOC leak. IPinfo Lite optional |
 | DNS | `dnspython` | Off by default (see Security) |
 | Cache/history | `sqlite3` (stdlib) | Own table, because abuse.ch APIs use POST and HTTP caches skip POST. Always stores `raw`; output strips it unless `--raw` |
@@ -59,7 +59,7 @@ Guiding rule: the core is a Python library that returns one JSON model. The CLI,
 | Graph | Cytoscape.js + `cytoscape-fcose` layout |
 | Fonts | Familjen Grotesk Variable (UI), Martian Mono Variable (IOCs, hashes, JSON), self-hosted |
 | Land data | `web/src/data/land.json`: Natural Earth land rasterised to a 2° dot grid by `npm run gen:land` (devDependencies `world-atlas`, `topojson-client`, used only by that script) |
-| Tests | Vitest for utilities, one Playwright smoke test |
+| Tests | Vitest for utilities and pure helpers (100 tests), Playwright end to end against `scripts/e2e_server.py` (27 tests, CI `e2e` job) |
 
 ---
 
@@ -179,8 +179,16 @@ class SourceResult(BaseModel):
     link: HttpUrl | None  # permalink to the source's web UI
     related: list[RelatedIOC]  # feeds the graph
     cached: bool
-    fetched_at: datetime
+    started_ms: int  # offset from the start of the check (set by the engine)
+    duration_ms: int  # 0 for a cache hit
+    fired: list[str]  # rules that matched (set by verdict.decide())
+    weight: int  # evidence weight in the confidence score
+    role: str  # strong | weak | feed | context | no answer
+    fetched_at: datetime  # when the answer was fetched; a cache hit keeps the original time
     raw: dict[str, Any] | None  # always cached; stripped from output unless --raw / raw tab
+
+    # `summary`, each tag and `RelatedIOC.value` go through textutil.clean_text when the model is
+    # built or loaded (control, bidi and invisible characters removed); `raw` is kept as received
 
 
 class Report(BaseModel):
@@ -199,6 +207,7 @@ class Report(BaseModel):
     seen_before: list[
         SeenBefore
     ]  # earlier reports sharing the IOC or related indicators (ASNs excluded)
+    cves: list[CveInfo]  # CVEs InternetDB reports for the host, with KEV and EPSS context
     duration_ms: int
     created_at: datetime
 ```
@@ -241,7 +250,7 @@ class Source(Protocol):
 3. Normalize: lowercase domains and hashes, IDNA encode, strip trailing dot, canonical URL.
 4. Reject internal targets with a clear message, for every IOC type:
    - IPs, and IP-literal hosts inside URLs, where `not ip.is_global`.
-   - Hostnames (domain IOCs and URL hosts) that are `localhost`, single-label (`intranet`), or end in `.local`, `.internal`, `.lan`, `.corp`, `.home.arpa`.
+   - Hostnames (domain IOCs and URL hosts) that are `localhost`, single-label (`intranet`), or end in `.local`, `.internal`, `.lan`, `.corp`, `.home.arpa`, `.intranet`, `.private`, `.home` or `.localdomain`; and NAT64 addresses (`64:ff9b::/96`) that wrap a private IPv4.
    - Hostnames ending in any suffix from the `VERDIKT_INTERNAL_DOMAINS` setting (your company domains).
 5. Unknown input exits with code 1 (the §10 "any error" code; 4 is not used) and a message. No API call is made.
 6. Domains whose last label is all digits or `0x` hex (`127.1`, `0x7f.0.0.1`) are rejected: browsers read them as IPs, so they are not public names.
@@ -252,14 +261,14 @@ class Source(Protocol):
 ## 8. Engine (`engine.py`)
 
 1. Detect IOC.
-2. Pick sources that support the type and have keys.
+2. Pick sources that support the type and are `enabled` (a key is set, or none is needed).
 3. For each source: cache hit within TTL → use it; else, per attempt (including retries): check daily budget → acquire limiter → query with timeout.
    - shortcut: limiter and budget are per process; `verdikt ui` + `verdikt bulk` at once double the rate. Move budget/limiter state to sqlite if that becomes normal.
 4. `asyncio.gather(..., return_exceptions=True)`: one failing source yields `Status.ERROR`, never a failed report.
-5. Enrich: geo for every IP in the IOC and in `related`; DNS only if enabled.
+5. Enrich: geo for every IP in the IOC and in `related`; CVE context (CISA KEV, EPSS) for the CVEs InternetDB reports; DNS only if enabled. Identical lookups running at the same moment share one request.
 6. Build the graph from `related`.
 7. Run `verdict.decide()`.
-8. Save the report to history. Return it.
+8. Save the report to history and index its indicators (`seen_before`), write the audit event. Return it.
 
 ---
 
@@ -314,12 +323,12 @@ confidence_medium: 3            # agreeing weight >= this -> medium, below -> lo
 Inside one source, keys are OR'ed (VT malicious ≥ 2 **or** suspicious ≥ 1). `tests/test_plan_sync.py` fails if the yaml block above differs from `src/verdikt/rules.yaml`.
 
 Decision order in `decide()`:
-1. Row levels: each OK row gets MALICIOUS / SUSPICIOUS / SAFE from the same rules. Context-only sources (InternetDB, GreyNoise, geo) get INFO.
+1. Row levels: each OK row gets MALICIOUS / SUSPICIOUS / SAFE from the same rules. Context-only sources (the `context_only` list: InternetDB, GreyNoise, OTX, urlscan, crt.sh, passive DNS) get INFO.
 2. Any MALICIOUS row → MALICIOUS.
 3. Any SUSPICIOUS row → SUSPICIOUS, unless a `benign_override` matches **and** no high-weight source is blocking (see 4) → SAFE.
 4. Otherwise SAFE only if **both**:
    - at least `min_sources_for_safe` **verdict-bearing** sources returned OK (INFO rows don't count),
-   - at least `min_high_weight_for_safe` of them are high-weight sources (weak sources alone never give SAFE), and
+   - at least `min_high_weight_for_safe` of them are strong sources (high-weight and not list-only feeds: today VirusTotal; ThreatFox, URLhaus and MalwareBazaar do not count), and
    - no high-weight source that supports this IOC type returned ERROR, RATE_LIMITED or NOT_FOUND.
 5. Otherwise UNKNOWN.
 
@@ -458,6 +467,7 @@ All `/api/*` routes and `/openapi.json` require the `X-Verdikt-Token` header. `v
 - Monospace for every IOC, hash and number. Copy button on each IOC (copies defanged by default).
 - Keyboard first: `⌘K`/`Ctrl+K` focus search, `Enter` run, `1/2/3` switch tabs, `Esc` clear.
 - Skeleton loaders per source row while results stream in.
+- Report side panel: "Changes since" (diff against the previous report of the indicator), "Indicator history", vulnerabilities, seen before. Source rows carry a provenance line (live or cached, fetched when, role, weight); each reason in the verdict card links to its source row. History has search, Verdict and Type filters and "Load more"; Batch has a triage bar (add to a case, watch). Diffs and history use no red or green: those colours are for verdict levels only. Details in `docs/DESIGN.md`.
 - Accessible: level is shown with text and icon, never colour alone. Contrast ≥ 4.5:1.
 
 ### Map
@@ -502,8 +512,8 @@ All `/api/*` routes and `/openapi.json` require the `X-Verdikt-Token` header. `v
 - `test_engine.py`: one source raising still yields a report; cache hit skips the HTTP call; budget exhausted yields `RATE_LIMITED`.
 - `test_api.py`: Host header check, token check, `/api/check` happy path.
 - `test_notify.py`: defanging, min-level filter, Telegram HTML escaping (`a<b`), Slack escaping (`<https://evil|Open report>`).
-- Frontend: Vitest for formatting helpers; one Playwright smoke test (search → verdict card visible).
-- CI (GitHub Actions): ruff, pyright, pytest, frontend build. No live API calls in CI.
+- Frontend: Vitest for formatting and other pure helpers; Playwright end to end against `scripts/e2e_server.py` (fake sources).
+- CI (GitHub Actions): ruff, ruff format, pyright, pytest; eslint, `tsc`, Vitest and the frontend build; a Playwright `e2e` job. No live API calls in CI.
 
 ---
 
@@ -540,7 +550,7 @@ Each milestone ends with tests passing and an acceptance check.
 
 - GeoLite2 needs a free MaxMind account and periodic database updates (`geoipupdate`).
 - VirusTotal public API and Shodan InternetDB terms forbid commercial products. Check before using verdikt at work.
-- Free-tier limits for urlscan, OTX, Pulsedive and abuse.ch are not published. Read them from response headers at runtime.
+- Free-tier limits for urlscan, OTX and abuse.ch are not published. Read them from response headers at runtime.
 - abuse.ch added v2 URL paths in 2026. Check their changelog before writing those clients.
 
 ---
@@ -587,6 +597,16 @@ Not built: a urlscan per-result verdict source (result pages are 13 to 40 MB eac
 | Detect | NAT64 wrapping a private IPv4 is refused; `.intranet .private .home .localdomain` are internal; `fullmatch` for every anchored pattern | |
 | Imports | Parsing runs in a thread; the 100k cap applies before `detect()`; `RecursionError` is an import error | |
 | Misc | `verdikt doctor`; audit log rotates at 10 MB to `.1`; locally matched sources (ttl 0) skip the cache write; unique temp names for feed writes; shared quota groups show the group's spend | |
+
+### 19d. Diff, search and triage
+
+| Area | What | Notes |
+|---|---|---|
+| Diff | `GET /api/reports/{id}/diff` and pure `diff.py` | What moved against the previous report of the indicator (or `?against=`); `no_answer` marks an error or rate limit; no `raw`; text capped at 300 characters and cleaned |
+| History search | `GET /api/reports` takes `q`, `level`, `type`; `Cache.list_reports` uses bound parameters and `LIKE ... ESCAPE` | `q` is a literal substring (up to 200 characters); newest first with an `id` tie-break |
+| Watchlist | `WatchState.max_entries` (the cap, 50) | Additive; no `schema_version` change |
+| UI | History filters and paging, "Changes since" block, Overview "What changed", Batch triage bar (add to a case, watch), `.feed-text` bidi isolation on feed text | Level is always text and an icon; diffs use no red or green |
+| Tests | `scripts/e2e_server.py` flip indicators; Playwright specs for the diff, search and triage flows | |
 
 ### 19e. Correctness, provenance, history
 
