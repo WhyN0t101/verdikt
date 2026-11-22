@@ -26,7 +26,9 @@ from verdikt.verdict import decide
 
 EVAL_DIR = Path(__file__).resolve().parent.parent / "tests" / "eval"
 CORPUS = EVAL_DIR / "corpus.jsonl"
-LOCAL = EVAL_DIR / "local"  # git-ignored rows recorded from licence-restricted sources
+INDICATORS = EVAL_DIR / "indicators.jsonl"  # real-world indicators: labels, no rows
+RECORDED = EVAL_DIR / "recorded.jsonl"  # rows recorded from open-licence sources (committed)
+LOCAL = EVAL_DIR / "local"  # git-ignored rows from licence-restricted sources
 BASELINE = EVAL_DIR / "baseline.json"
 ORDER = {"safe": 0, "suspicious": 1, "malicious": 2}
 GATED_SPLITS = ("synthetic", "holdout")  # outputs must match the baseline exactly
@@ -40,6 +42,7 @@ class Sample:
     label: tuple[str, str] | None  # ordinal interval; None = unlabelled (the tool may abstain)
     rows: tuple[tuple[str, str, tuple[tuple[str, int | bool], ...]], ...]
     raw: str  # the corpus line, for the holdout checksum
+    group: str = "synthetic"  # "realworld" samples are never gated in CI
 
 
 @dataclass(frozen=True)
@@ -50,29 +53,55 @@ class Outcome:
     total: int
 
 
+def _sample(data: dict[str, Any], rows: list[dict[str, Any]], line: str, group: str) -> Sample:
+    label = data.get("label")
+    return Sample(
+        id=data["id"],
+        split=data["split"],
+        label=(label["min"], label["max"]) if label else None,
+        rows=tuple(
+            (r["source"], r["status"], tuple(sorted(r.get("metrics", {}).items()))) for r in rows
+        ),
+        raw=line,
+        group=group,
+    )
+
+
+def _lines(path: Path) -> list[tuple[str, dict[str, Any]]]:
+    if not path.exists():
+        return []
+    texts = (t for t in path.read_text(encoding="utf-8").splitlines() if t.strip())
+    return [(t, json.loads(t)) for t in texts]
+
+
+def _recorded() -> dict[str, list[dict[str, Any]]]:
+    """Rows recorded by scripts/eval_record.py: committed (open licence) and local (ignored)."""
+    found: dict[str, dict[str, dict[str, Any]]] = {}
+    for path in [RECORDED, *sorted(LOCAL.glob("recorded*.jsonl"))]:
+        for _, data in _lines(path):
+            for row in data["rows"]:
+                found.setdefault(data["id"], {})[row["source"]] = row
+    return {sid: list(rows.values()) for sid, rows in found.items()}
+
+
 def load_samples(paths: list[Path] | None = None) -> list[Sample]:
-    files = paths if paths is not None else [CORPUS, *sorted(LOCAL.glob("*.jsonl"))]
-    samples: list[Sample] = []
-    for path in files:
-        if not path.exists():
-            continue
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if not line.strip():
-                continue
-            data = json.loads(line)
-            label = data.get("label")
-            samples.append(
-                Sample(
-                    id=data["id"],
-                    split=data["split"],
-                    label=(label["min"], label["max"]) if label else None,
-                    rows=tuple(
-                        (r["source"], r["status"], tuple(sorted(r.get("metrics", {}).items())))
-                        for r in data["rows"]
-                    ),
-                    raw=line,
-                )
-            )
+    """The inline corpus, plus (by default) the real-world indicators that have recorded rows.
+
+    Real-world indicators are metadata only; their rows come from `recorded.jsonl` and
+    `local/recorded*.jsonl`. An indicator nobody recorded yet is not evaluated.
+    """
+    samples = [
+        _sample(data, data["rows"], line, "synthetic")
+        for path in (paths if paths is not None else [CORPUS])
+        for line, data in _lines(path)
+    ]
+    if paths is None:
+        recorded = _recorded()
+        samples += [
+            _sample(data, recorded[data["id"]], line, "realworld")
+            for line, data in _lines(INDICATORS)
+            if data["id"] in recorded
+        ]
     ids = [s.id for s in samples]
     if len(ids) != len(set(ids)):
         raise ValueError("duplicate sample ids in the corpus")
