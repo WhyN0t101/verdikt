@@ -112,6 +112,8 @@ verdikt/
 │   ├── scheduler.py             # in-process jobs for verdikt ui (watch, feeds), off by default
 │   ├── audit.py                 # JSON-lines audit log, rotates at 10 MB
 │   ├── diff.py                  # pure diff of two stored reports (no I/O)
+│   ├── history.py               # one indicator's reports, cases and watch events (assembly is pure)
+│   ├── textutil.py              # clean_text: the one rule for feed-derived text
 │   ├── stix.py  misp.py         # STIX 2.1 bundle and MISP event export
 │   ├── export.py                # Markdown / HTML report and case export
 │   ├── jsonutil.py              # typed accessors for untyped vendor JSON
@@ -389,6 +391,7 @@ Exit codes (kept off 1 and 2, which Python crashes and Click usage errors alread
 | GET | `/api/reports` | History list, newest first. Optional `q` (literal substring of the indicator, up to 200 characters), `level`, `type`, `limit`, `offset` |
 | GET | `/api/reports/{report_id}` | One stored report (`?raw=true` keeps vendor payloads) |
 | GET | `/api/reports/{report_id}/diff` | What changed against `?against=<report_id>`, else the newest earlier report of the same indicator (`previous_id: null` when there is none). No `raw`; text capped and stripped of control and bidi characters; `no_answer` marks an error or rate limit |
+| GET | `/api/reports/{report_id}/history` | Everything stored about this indicator: up to 50 reports (newest first, `truncated`), level `changes`, the cases that hold them, `watched`, `watched_since` and the watch `events` (newest first). Exact indicator match; case titles are returned as stored |
 | GET | `/api/reports/{report_id}/stix` | The report as a STIX 2.1 bundle (`application/stix+json`) |
 | GET | `/api/reports/{report_id}/misp` | The report as a MISP event JSON |
 | GET | `/api/reports/{report_id}/export` | `?format=md\|html`: shareable, defanged, escaped document |
@@ -484,7 +487,7 @@ All `/api/*` routes and `/openapi.json` require the `X-Verdikt-Token` header. `v
 - **Do not submit scans to urlscan by default.** Submissions are public unless set private, and make urlscan visit the target.
 - **DNS resolution is off by default.** Resolving a domain can reach the attacker's authoritative name server. Prefer passive DNS from VT/OTX.
 - Internal targets are never sent to third parties: private IPs, URLs with private/internal hosts, internal hostnames (§7 step 4).
-- Render source text as text, never as HTML: threat-feed data is attacker-controlled. Same for notifications: escape before sending (§11).
+- Render source text as text, never as HTML: threat-feed data is attacker-controlled. Same for notifications: escape before sending (§11). Control, bidi and invisible characters (Unicode Cc, Cf, Zl, Zp) are stripped from feed-derived text (`summary`, `tags`, related values) by `clean_text` whenever a result is built or loaded.
 - Map tiles would be a lookup leak too: the map uses none and must make no remote request.
 
 ---
@@ -584,3 +587,12 @@ Not built: a urlscan per-result verdict source (result pages are 13 to 40 MB eac
 | Detect | NAT64 wrapping a private IPv4 is refused; `.intranet .private .home .localdomain` are internal; `fullmatch` for every anchored pattern | |
 | Imports | Parsing runs in a thread; the 100k cap applies before `detect()`; `RecursionError` is an import error | |
 | Misc | `verdikt doctor`; audit log rotates at 10 MB to `.1`; locally matched sources (ttl 0) skip the cache write; unique temp names for feed writes; shared quota groups show the group's spend | |
+
+### 19e. Correctness, provenance, history
+
+| Area | What | Notes |
+|---|---|---|
+| Feed text | `textutil.clean_text` turns tab and line breaks into a space and drops every Cc, Cf, Zl and Zp character. It runs as a validator on `SourceResult.summary`, `SourceResult.tags` and `RelatedIOC.value`, so cached and stored rows are cleaned when loaded. `diff` and `notify.format` use it too | `raw` stays as received. Terminal escapes, bidi controls, zero-width and tag characters never reach the CLI, API, exports or audit log. ZWJ emoji lose the joiner |
+| Provenance | The Markdown and HTML exports have an Evidence table (source, status, level, fetched UTC, cached, defanged page, rules that fired). A cache hit keeps the original `fetched_at` | No live link, no `raw`. `Report` and `schema_version` are unchanged (a stored `rules_id` was not built) |
+| History | `GET /api/reports/{id}/history` (section 12) | Reuses `ReportSummary`, `CaseSummary` and `WatchEvent`; no new table |
+| Small | `previous_report` skips unreadable rows (tries the newest 5); `against` is at most 64 characters; `scripts/e2e_server.py` has `FLIP` (9.9.9.9: clean once, then malicious) | |
