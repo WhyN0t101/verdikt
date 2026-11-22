@@ -9,8 +9,6 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any, cast
 
-from ioc_finder import find_iocs  # pyright: ignore[reportMissingTypeStubs]
-
 from verdikt.detect import DetectError, detect
 from verdikt.models import IOCType, Model
 
@@ -36,6 +34,9 @@ class Extraction(Model):
 
 
 def _candidates(text: str) -> Iterable[str]:
+    # imported here: the grammar costs ~0.4 s at startup and only extraction needs it
+    from ioc_finder import find_iocs  # pyright: ignore[reportMissingTypeStubs]
+
     found = cast(
         "dict[str, list[Any]]",
         find_iocs(  # pyright: ignore[reportUnknownVariableType]

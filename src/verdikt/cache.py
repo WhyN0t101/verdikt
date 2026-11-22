@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS reports (
   id TEXT PRIMARY KEY, ioc TEXT NOT NULL, ioc_type TEXT NOT NULL, level TEXT NOT NULL,
   created_at TEXT NOT NULL, body TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS reports_created ON reports (created_at DESC);
+CREATE INDEX IF NOT EXISTS reports_ioc ON reports (ioc, created_at DESC);
 CREATE TABLE IF NOT EXISTS ioc_index (
   report_id TEXT NOT NULL, kind TEXT NOT NULL, value TEXT NOT NULL,
   PRIMARY KEY (report_id, value));
@@ -200,6 +201,12 @@ class Cache:
         if str(path) != ":memory:":
             Path(path).parent.mkdir(parents=True, exist_ok=True)
         self._db = sqlite3.connect(str(path), check_same_thread=False)
+        if str(path) != ":memory:":
+            # one fsync per commit made every source result cost ~6 ms on the event loop. WAL +
+            # NORMAL can lose the last commits on a power cut but never corrupts the file (cache
+            # and history only). Adds `-wal` and `-shm` files: keep the database off network shares.
+            self._db.execute("PRAGMA journal_mode=WAL")
+            self._db.execute("PRAGMA synchronous=NORMAL")
         self._lock = threading.Lock()
         self._clock = clock
         self._retention = report_retention
@@ -694,6 +701,14 @@ class Cache:
             WatchEntry.model_validate(dict(zip(WatchEntry.model_fields, r, strict=True)))
             for r in rows
         ]
+
+    def watch_touch(self, ioc: str) -> None:
+        """Note that an entry was just re-checked without changing its stored verdict."""
+        with self._lock, self._db:
+            self._db.execute(
+                "UPDATE watchlist SET last_checked_at=? WHERE ioc=?",
+                (self._clock().isoformat(), ioc),
+            )
 
     def watch_record(self, report: Report) -> str | None:
         """Store the latest result for an entry. Returns the previous level if it changed."""

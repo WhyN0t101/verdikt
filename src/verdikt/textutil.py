@@ -12,4 +12,6 @@ def clean_text(text: str) -> str:
     """Tabs and line breaks become a space; every control, format and line/paragraph separator
     character is dropped. That removes terminal escapes (ESC), bidi overrides, zero-width and
     tag characters, so feed text cannot recolour a terminal, retitle it or reorder a line."""
+    if text.isprintable():  # False for every Cc, Cf, Zl, Zp and tab/LF/CR, so nothing to change
+        return text
     return "".join(c for c in text.translate(_FLAT) if unicodedata.category(c) not in _DROP)
