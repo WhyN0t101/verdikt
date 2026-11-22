@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from verdikt.detect import DetectError, detect
+from verdikt.detect import DetectError, detect, is_internal_host
 from verdikt.models import IOCType
 
 
@@ -89,3 +89,82 @@ def test_malformed_url_authority_is_a_detect_error(raw: str) -> None:
 def test_oversized_input_is_rejected() -> None:
     with pytest.raises(DetectError, match="too long"):
         detect("a" * 10_000 + ".com")
+
+
+# --- IPv6 forms that carry an IPv4 address, and deprecated site-local space ---------------------
+
+HIDDEN_INTERNAL = [
+    "::a00:1",  # IPv4-compatible, 10.0.0.1
+    "::A00:1",  # mixed case
+    "[::a00:1]",  # bracketed
+    "::7f00:1",  # 127.0.0.1
+    "::c0a8:1",  # 192.168.0.1
+    "::a9fe:1",  # 169.254.0.1
+    "::ac10:1",  # 172.16.0.1
+    "::6440:1",  # 100.64.0.1 (CGNAT)
+    "::100",  # 0.0.1.0
+    "::1:0",  # 0.1.0.0
+    "::ffff:0:a00:1",  # IPv4-translated (SIIT), 10.0.0.1
+    "::ffff:0:A00:1",
+    "::ffff:0:7f00:1",
+    "::ffff:0:0:0",  # SIIT, 0.0.0.0
+    "fec0::1",  # deprecated site-local
+    "FEC0::1",
+    "feff::1",  # the end of fec0::/10
+    "fec0:1:2::3",
+    "::ffff:10.0.0.1",  # already refused: must stay refused
+    "64:ff9b::a00:1",
+    "2002:0a00:0001::1",
+    "2001:db8::1",
+    "::1",
+    "::",
+]
+
+
+@pytest.mark.parametrize("raw", HIDDEN_INTERNAL)
+def test_ipv6_forms_of_internal_addresses_are_refused(raw: str) -> None:
+    with pytest.raises(DetectError, match="internal"):
+        detect(raw)
+
+
+@pytest.mark.parametrize("host", ["::a00:1", "::ffff:0:a00:1", "fec0::1", "FEC0::1", "::7f00:1"])
+@pytest.mark.parametrize(
+    "form", ["http://[{}]/x", "https://[{}]:8443/a?b=c", "[{}]/x", "hxxp://[{}]/x"]
+)
+def test_urls_with_such_hosts_are_refused(form: str, host: str) -> None:
+    with pytest.raises(DetectError, match="internal"):
+        detect(form.format(host))
+
+
+@pytest.mark.parametrize("host", ["::a00:1", "::ffff:0:a00:1", "fec0::1", "::ffff:10.0.0.1"])
+def test_is_internal_host_covers_them(host: str) -> None:
+    assert is_internal_host(host) is True
+
+
+@pytest.mark.parametrize(
+    ("raw", "value"),
+    [  # accepted before this change and still accepted: only a non-global embedded IPv4 is refused
+        ("::ffff:8.8.8.8", "8.8.8.8"),
+        ("64:ff9b::808:808", "64:ff9b::808:808"),
+        ("::808:808", "::808:808"),  # IPv4-compatible with a public v4
+        ("::ffff:0:808:808", "::ffff:0:808:808"),  # SIIT with a public v4
+        ("2001:4860:4860::8888", "2001:4860:4860::8888"),
+        ("2606:4700::1111", "2606:4700::1111"),
+        ("[2606:4700::1111]", "2606:4700::1111"),
+        ("http://[::808:808]/x", "http://[::808:808]/x"),
+        ("http://[2606:4700::1111]/x", "http://[2606:4700::1111]/x"),
+        ("8.8.8.8", "8.8.8.8"),
+    ],
+)
+def test_public_addresses_keep_their_results(raw: str, value: str) -> None:
+    assert detect(raw).value == value
+
+
+def test_extract_lists_them_as_skipped_never_queued() -> None:
+    from verdikt.extract import extract_iocs
+
+    text = "bad: ::a00:1 fec0::1 ::ffff:0:a00:1 good: 8.8.8.8 2606:4700::1111"
+    result = extract_iocs(text)
+    assert sorted(i.value for i in result.items) == ["2606:4700::1111", "8.8.8.8"]
+    assert {s.value for s in result.skipped} == {"::a00:1", "fec0::1", "::ffff:0:a00:1"}
+    assert all("internal" in s.reason for s in result.skipped)

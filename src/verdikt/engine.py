@@ -16,7 +16,7 @@ from aiolimiter import AsyncLimiter
 from verdikt.audit import AuditLog
 from verdikt.cache import Cache
 from verdikt.config import Rules, Settings, load_rules
-from verdikt.detect import detect
+from verdikt.detect import detect, is_public_ip
 from verdikt.enrich import dns as dns_enrich
 from verdikt.enrich.cve import CveStore
 from verdikt.enrich.geo import GeoLookup
@@ -255,7 +255,7 @@ class Engine:
                 parsed = ipaddress.ip_address(ip)
             except ValueError:
                 continue
-            if ip in seen or not parsed.is_global:
+            if ip in seen or not is_public_ip(parsed):
                 continue
             seen.add(ip)
             if point := self._geo.lookup(ip, role):

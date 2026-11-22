@@ -7,6 +7,7 @@ import ipaddress
 import dns.asyncresolver
 import dns.exception
 
+from verdikt.detect import is_public_ip
 from verdikt.models import IOCType, RelatedIOC
 
 LIFETIME = 3.0
@@ -24,7 +25,7 @@ async def resolve(host: str) -> list[RelatedIOC]:
             continue
         for rdata in answer:
             ip = ipaddress.ip_address(rdata.to_text())
-            if ip.is_global:
+            if is_public_ip(ip):
                 found.append(
                     RelatedIOC(value=ip.compressed, type=IOCType.IP, relation="resolves_to")
                 )

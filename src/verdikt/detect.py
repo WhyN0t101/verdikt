@@ -40,11 +40,39 @@ def _parse_ip(text: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None
         return None
 
 
-def _public(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    """Globally routable, looking through NAT64 (`64:ff9b::a00:1` is 10.0.0.1 in disguise)."""
-    if isinstance(ip, ipaddress.IPv6Address) and ip in _NAT64:
-        return ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF).is_global
-    return ip.is_global
+_SITE_LOCAL = ipaddress.ip_network("fec0::/10")  # deprecated, but still never public
+_SIIT = ipaddress.ip_network("::ffff:0:0:0/96")  # IPv4-translated (RFC 2765)
+_COMPATIBLE = ipaddress.ip_network("::/96")  # IPv4-compatible (deprecated)
+_V6 = ipaddress.IPv6Address
+_Addr = ipaddress.IPv4Address | ipaddress.IPv6Address
+
+
+def _low32(ip: ipaddress.IPv6Address) -> ipaddress.IPv4Address:
+    return ipaddress.IPv4Address(int(ip) & 0xFFFFFFFF)
+
+
+def embedded_ipv4(ip: _Addr) -> list[ipaddress.IPv4Address]:
+    """Every IPv4 address an IPv6 address carries: mapped, NAT64, 6to4, Teredo, compatible, SIIT."""
+    if not isinstance(ip, _V6):
+        return []
+    found: list[ipaddress.IPv4Address] = []
+    if ip.ipv4_mapped is not None:
+        found.append(ip.ipv4_mapped)
+    if ip in _NAT64 or ip in _COMPATIBLE or ip in _SIIT:
+        found.append(_low32(ip))
+    if ip.sixtofour is not None:
+        found.append(ip.sixtofour)
+    if ip.teredo is not None:
+        found.extend(ip.teredo)
+    return found
+
+
+def is_public_ip(ip: _Addr) -> bool:
+    """Globally routable, looking through every form that hides an IPv4 address in IPv6
+    (`64:ff9b::a00:1`, `::a00:1` and `::ffff:0:a00:1` are all 10.0.0.1 in disguise)."""
+    if isinstance(ip, _V6) and ip in _SITE_LOCAL:
+        return False
+    return ip.is_global and all(v4.is_global for v4 in embedded_ipv4(ip))
 
 
 def is_internal_host(host: str, extra_suffixes: Iterable[str] = ()) -> bool:
@@ -52,7 +80,7 @@ def is_internal_host(host: str, extra_suffixes: Iterable[str] = ()) -> bool:
     host = host.lower().rstrip(".")
     ip = _parse_ip(host)
     if ip is not None:
-        return not _public(ip)
+        return not is_public_ip(ip)
     if host == "localhost" or host.endswith(".localhost") or "." not in host:
         return True
     suffixes = [*INTERNAL_SUFFIXES, *(_dot(s) for s in extra_suffixes if s.strip())]
@@ -113,7 +141,7 @@ def detect(raw: str, internal_domains: Iterable[str] = ()) -> IOC:
 
     ip = _parse_ip(text)
     if ip is not None:
-        if not _public(ip):
+        if not is_public_ip(ip):
             raise DetectError(f"refusing internal IP {ip}: never sent to third parties")
         mapped = ip.ipv4_mapped if isinstance(ip, ipaddress.IPv6Address) else None
         return IOC(value=(mapped or ip).compressed, type=IOCType.IP)
