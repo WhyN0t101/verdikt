@@ -14,3 +14,6 @@ web/playwright-report/
 
 # design reference images stay local
 docs/design/
+
+# evaluation rows recorded from licence-restricted sources (VirusTotal, AbuseIPDB, GreyNoise, Hybrid)
+tests/eval/local/

@@ -1,0 +1,374 @@
+{
+ "note": "Accepted outputs of decide() over tests/eval/corpus.jsonl. Rewrite with `python scripts/eval_report.py --update-baseline` and review the diff.",
+ "holdout_checksum": "9948fcf8ba30dbda410d2bd75aca5114e3055c5dd7421cace44f56593022ae13",
+ "outcomes": {
+  "deg-all-error": [
+   "unknown",
+   "low"
+  ],
+  "deg-all-rate-limited": [
+   "unknown",
+   "low"
+  ],
+  "deg-malwarebazaar-error": [
+   "unknown",
+   "low"
+  ],
+  "deg-malwarebazaar-hit-others-error": [
+   "malicious",
+   "low"
+  ],
+  "deg-malwarebazaar-not_found": [
+   "unknown",
+   "low"
+  ],
+  "deg-malwarebazaar-rate_limited": [
+   "unknown",
+   "low"
+  ],
+  "deg-no-rows": [
+   "unknown",
+   "low"
+  ],
+  "deg-threatfox-error": [
+   "unknown",
+   "low"
+  ],
+  "deg-threatfox-hit-others-error": [
+   "malicious",
+   "low"
+  ],
+  "deg-threatfox-not_found": [
+   "unknown",
+   "low"
+  ],
+  "deg-threatfox-rate_limited": [
+   "unknown",
+   "low"
+  ],
+  "deg-urlhaus-error": [
+   "unknown",
+   "low"
+  ],
+  "deg-urlhaus-hit-others-error": [
+   "malicious",
+   "low"
+  ],
+  "deg-urlhaus-not_found": [
+   "unknown",
+   "low"
+  ],
+  "deg-urlhaus-rate_limited": [
+   "unknown",
+   "low"
+  ],
+  "deg-virustotal-error": [
+   "unknown",
+   "low"
+  ],
+  "deg-virustotal-hit-others-error": [
+   "malicious",
+   "medium"
+  ],
+  "deg-virustotal-not_found": [
+   "unknown",
+   "low"
+  ],
+  "deg-virustotal-rate_limited": [
+   "unknown",
+   "low"
+  ],
+  "grid-001-virustotal-malicious-4": [
+   "suspicious",
+   "medium"
+  ],
+  "grid-002-virustotal-malicious-5": [
+   "malicious",
+   "medium"
+  ],
+  "grid-003-virustotal-malicious-6": [
+   "malicious",
+   "medium"
+  ],
+  "grid-004-localfeeds-blocklisted-True": [
+   "malicious",
+   "low"
+  ],
+  "grid-005-localfeeds-blocklisted-False": [
+   "safe",
+   "high"
+  ],
+  "grid-006-abuseipdb-score-74": [
+   "suspicious",
+   "low"
+  ],
+  "grid-007-abuseipdb-score-75": [
+   "malicious",
+   "low"
+  ],
+  "grid-008-abuseipdb-score-76": [
+   "malicious",
+   "low"
+  ],
+  "grid-009-threatfox-match-True": [
+   "malicious",
+   "low"
+  ],
+  "grid-010-threatfox-match-False": [
+   "safe",
+   "high"
+  ],
+  "grid-011-malwarebazaar-match-True": [
+   "malicious",
+   "low"
+  ],
+  "grid-012-malwarebazaar-match-False": [
+   "safe",
+   "high"
+  ],
+  "grid-013-urlhaus-url_online-True": [
+   "malicious",
+   "low"
+  ],
+  "grid-014-urlhaus-url_online-False": [
+   "safe",
+   "high"
+  ],
+  "grid-015-virustotal-malicious-1": [
+   "safe",
+   "high"
+  ],
+  "grid-016-virustotal-malicious-2": [
+   "suspicious",
+   "medium"
+  ],
+  "grid-017-virustotal-malicious-3": [
+   "suspicious",
+   "medium"
+  ],
+  "grid-018-virustotal-suspicious-0": [
+   "safe",
+   "high"
+  ],
+  "grid-019-virustotal-suspicious-1": [
+   "suspicious",
+   "medium"
+  ],
+  "grid-020-virustotal-suspicious-2": [
+   "suspicious",
+   "medium"
+  ],
+  "grid-021-abuseipdb-score-24": [
+   "safe",
+   "high"
+  ],
+  "grid-022-abuseipdb-score-25": [
+   "suspicious",
+   "low"
+  ],
+  "grid-023-abuseipdb-score-26": [
+   "suspicious",
+   "low"
+  ],
+  "grid-024-hybrid-malicious-True": [
+   "suspicious",
+   "low"
+  ],
+  "grid-025-hybrid-malicious-False": [
+   "safe",
+   "high"
+  ],
+  "grid-026-hashlookup-known_malicious-True": [
+   "suspicious",
+   "low"
+  ],
+  "grid-027-hashlookup-known_malicious-False": [
+   "safe",
+   "high"
+  ],
+  "grid-028-urlhaus-online-True": [
+   "suspicious",
+   "low"
+  ],
+  "grid-029-urlhaus-online-False": [
+   "safe",
+   "high"
+  ],
+  "grid-030-rdap-age_days-29": [
+   "suspicious",
+   "low"
+  ],
+  "grid-031-rdap-age_days-30": [
+   "safe",
+   "high"
+  ],
+  "grid-032-rdap-age_days-31": [
+   "safe",
+   "high"
+  ],
+  "mig-abuse-25": [
+   "suspicious",
+   "low"
+  ],
+  "mig-abuse-75": [
+   "malicious",
+   "low"
+  ],
+  "mig-blocklisted-ip": [
+   "malicious",
+   "medium"
+  ],
+  "mig-clean-pair": [
+   "safe",
+   "high"
+  ],
+  "mig-conflict-vt-vs-abuse": [
+   "malicious",
+   "medium"
+  ],
+  "mig-context-only-never-clears": [
+   "unknown",
+   "low"
+  ],
+  "mig-everything-agrees-malicious": [
+   "malicious",
+   "high"
+  ],
+  "mig-everything-agrees-safe": [
+   "safe",
+   "high"
+  ],
+  "mig-hybrid-malicious-flag": [
+   "suspicious",
+   "low"
+  ],
+  "mig-known-good-file-softens": [
+   "safe",
+   "low"
+  ],
+  "mig-known-malicious-file": [
+   "suspicious",
+   "low"
+  ],
+  "mig-malwarebazaar-hit": [
+   "malicious",
+   "low"
+  ],
+  "mig-old-domain": [
+   "safe",
+   "high"
+  ],
+  "mig-one-source-only": [
+   "unknown",
+   "low"
+  ],
+  "mig-only-feeds-no-strong-source": [
+   "unknown",
+   "low"
+  ],
+  "mig-popular-otx-pulses-are-context": [
+   "safe",
+   "high"
+  ],
+  "mig-riot-cannot-clear-malicious": [
+   "malicious",
+   "medium"
+  ],
+  "mig-riot-softens-suspicious": [
+   "safe",
+   "low"
+  ],
+  "mig-threatfox-hit-vt-clean": [
+   "malicious",
+   "low"
+  ],
+  "mig-top-site-cannot-clear-malicious": [
+   "malicious",
+   "medium"
+  ],
+  "mig-top-site-softens-suspicious": [
+   "safe",
+   "low"
+  ],
+  "mig-tor-exit-is-context": [
+   "safe",
+   "high"
+  ],
+  "mig-urlhaus-exact-url-online": [
+   "malicious",
+   "low"
+  ],
+  "mig-urlhaus-host-offline": [
+   "safe",
+   "medium"
+  ],
+  "mig-urlhaus-host-only": [
+   "suspicious",
+   "low"
+  ],
+  "mig-vt-1-one-engine-is-not-enough": [
+   "safe",
+   "high"
+  ],
+  "mig-vt-2-alone-with-abuse-clean": [
+   "suspicious",
+   "medium"
+  ],
+  "mig-vt-20": [
+   "malicious",
+   "medium"
+  ],
+  "mig-vt-5-boundary": [
+   "malicious",
+   "medium"
+  ],
+  "mig-young-domain-weak-signal": [
+   "suspicious",
+   "low"
+  ],
+  "ref-eicar-sha256": [
+   "malicious",
+   "medium"
+  ],
+  "ref-example-com": [
+   "safe",
+   "medium"
+  ],
+  "ref-example-com-urlhaus-miss": [
+   "safe",
+   "medium"
+  ],
+  "ref-gsx88-domain-threatfox": [
+   "malicious",
+   "low"
+  ],
+  "ref-malwarebazaar-real-hit": [
+   "malicious",
+   "high"
+  ],
+  "ref-popular-host-listed-by-urlhaus": [
+   "suspicious",
+   "low"
+  ]
+ },
+ "dangerous_miss": 0,
+ "false_alarm": 0,
+ "coverage": {
+  "k": 69,
+  "n": 87
+ },
+ "calibration": {
+  "high": {
+   "k": 20,
+   "n": 20
+  },
+  "low": {
+   "k": 30,
+   "n": 30
+  },
+  "medium": {
+   "k": 19,
+   "n": 19
+  }
+ }
+}
