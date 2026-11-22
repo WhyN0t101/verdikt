@@ -3,9 +3,11 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { ago, shortenMiddle } from "../lib/format";
 import { parseProgress } from "../lib/progress";
+import { describeWatch } from "../lib/watchText";
 import type { JobStatus, Level } from "../model";
 import { ActivityChart } from "./ActivityChart";
 import { LEVEL_BG, LevelBadge } from "./LevelBadge";
+import { SourcesPanel } from "./SourcesPanel";
 import { Button, FIELD, Panel } from "./ui";
 
 function Tile({ label, value, tone }: { label: string; value: string | number; tone?: string }) {
@@ -13,6 +15,23 @@ function Tile({ label, value, tone }: { label: string; value: string | number; t
     <div className="rounded-lg border border-line bg-panel px-4 py-3">
       <div className="text-xs text-muted">{label}</div>
       <div className={`mt-1 text-3xl font-semibold tabular-nums tracking-tight ${tone ?? ""}`}>{value}</div>
+    </div>
+  );
+}
+
+/** Determinate when the job reports "done/total", otherwise the stepped pixel bar. */
+function JobBar({ progress, label }: { progress: string; label: string }) {
+  const frac = parseProgress(progress);
+  return (
+    <div
+      role="progressbar"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={frac === null ? undefined : Math.round(frac * 100)}
+      className="h-1.5 border border-line-strong"
+    >
+      {frac === null ? <div className="pixel h-full w-full" /> : <div className="hatch h-full text-accent-text" style={{ width: `${frac * 100}%` }} />}
     </div>
   );
 }
@@ -32,27 +51,25 @@ export function Overview({ onCheck, onOpen }: { onCheck: (ioc: string) => void; 
   });
   const watchJob = sched.data?.find((j) => j.name === "watch");
   const watchRunning = watchJob?.running ?? false;
-  // progress arrives as "3/50"; empty until the first entry finishes
-  const frac = parseProgress(watchJob?.progress ?? "");
-  const wasRunning = useRef(false);
+  // when any background job finishes, what it changed must be fetched again
+  const wasRunning = useRef<Record<string, boolean>>({});
   useEffect(() => {
-    if (wasRunning.current && !watchRunning) {
-      void qc.invalidateQueries({ queryKey: ["watchlist"] });
-      void qc.invalidateQueries({ queryKey: ["stats"] });
+    const now = Object.fromEntries((sched.data ?? []).map((j) => [j.name, j.running]));
+    const finished = Object.entries(wasRunning.current).some(([name, was]) => was && !now[name]);
+    wasRunning.current = now;
+    if (finished) {
+      for (const key of ["watchlist", "stats", "feeds"]) void qc.invalidateQueries({ queryKey: [key] });
     }
-    wasRunning.current = watchRunning;
-  }, [watchRunning, qc]);
+  }, [sched.data, qc]);
   const [importName, setImportName] = useState("");
-  const runJob = useMutation({
-    mutationFn: api.schedulerRun,
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["scheduler"] });
-      void qc.invalidateQueries({ queryKey: ["watchlist"] });
-      void qc.invalidateQueries({ queryKey: ["feeds"] });
-    },
+  const [allAttrs, setAllAttrs] = useState(false);
+  // one path for every job button: start returns at once with the live status and the poll above shows progress
+  const startJob = useMutation({
+    mutationFn: api.schedulerStart,
+    onSuccess: (job) => qc.setQueryData(["scheduler"], (all: JobStatus[] | undefined) => all?.map((j) => (j.name === job.name ? job : j))),
   });
   const importFeed = useMutation({
-    mutationFn: async (file: File) => api.feedsImport(importName.trim(), await file.text()),
+    mutationFn: async (file: File) => api.feedsImport(importName.trim(), await file.text(), allAttrs),
     onSuccess: () => {
       setImportName("");
       void qc.invalidateQueries({ queryKey: ["feeds"] });
@@ -60,11 +77,6 @@ export function Overview({ onCheck, onOpen }: { onCheck: (ioc: string) => void; 
   });
   const forget = useMutation({ mutationFn: api.feedsForget, onSuccess: (list) => qc.setQueryData(["feeds"], list) });
 
-  // start returns at once with the live status; the poll above shows progress
-  const recheck = useMutation({
-    mutationFn: () => api.schedulerStart("watch"),
-    onSuccess: (job) => qc.setQueryData(["scheduler"], (all: JobStatus[] | undefined) => all?.map((j) => (j.name === job.name ? job : j))),
-  });
   const remove = useMutation({
     mutationFn: api.watchRemove,
     onSuccess: (state) => qc.setQueryData(["watchlist"], state),
@@ -73,6 +85,10 @@ export function Overview({ onCheck, onOpen }: { onCheck: (ioc: string) => void; 
     mutationFn: api.feedsUpdate,
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["feeds"] }),
   });
+
+  // the headline above is only for a re-check started here; the detail text comes from the job itself
+  const watchChecked = startJob.isSuccess && startJob.variables === "watch";
+  const watchEvidence = watchJob ? describeWatch(watchJob.last_detail, watchJob.last_ok).evidence : null;
 
   const s = stats.data;
   const fb = s?.feedback;
@@ -93,6 +109,8 @@ export function Overview({ onCheck, onOpen }: { onCheck: (ioc: string) => void; 
         {s ? <ActivityChart data={s.by_day} /> : <div className="pixel h-24" role="status" aria-label="Loading activity" />}
       </Panel>
 
+      <SourcesPanel className="lg:col-span-2" />
+
       <Panel title="Source health, last 30 days" label="Source health">
         {s && s.sources.length === 0 && <p className="text-sm text-muted">Source statistics appear after the first check.</p>}
         {s && s.sources.length > 0 && (
@@ -102,6 +120,7 @@ export function Overview({ onCheck, onOpen }: { onCheck: (ioc: string) => void; 
                 <tr className="text-xs text-muted">
                   <th className="pb-2 font-normal">Source</th>
                   <th className="pb-2 font-normal">Answered</th>
+                  <th className="pb-2 font-normal">Not found</th>
                   <th className="pb-2 font-normal">Errors</th>
                   <th className="pb-2 font-normal">Limited</th>
                   <th className="pb-2 font-normal">Cached</th>
@@ -113,6 +132,7 @@ export function Overview({ onCheck, onOpen }: { onCheck: (ioc: string) => void; 
                   <tr key={h.source} className="border-t border-line">
                     <td className="py-1.5">{h.source}</td>
                     <td>{pct(h.ok, h.checks)}</td>
+                    <td>{h.not_found}</td>
                     <td className={h.errors > 0 ? "text-malicious" : ""}>{h.errors}</td>
                     <td className={h.rate_limited > 0 ? "text-suspicious" : ""}>{h.rate_limited}</td>
                     <td>{pct(h.cached, h.checks)}</td>
@@ -125,45 +145,51 @@ export function Overview({ onCheck, onOpen }: { onCheck: (ioc: string) => void; 
         )}
       </Panel>
 
-      <Panel title="Watchlist" label="Watchlist">
+      <Panel title={`Watchlist${watch.data ? `, ${watch.data.entries.length} of ${watch.data.max_entries}` : ""}`} label="Watchlist">
         <div className="mb-3 flex flex-wrap items-center gap-3">
-          <Button size="sm" disabled={recheck.isPending || watchRunning || (watch.data?.entries.length ?? 0) === 0} onClick={() => recheck.mutate()}>
+          <Button size="sm" disabled={startJob.isPending || watchRunning || (watch.data?.entries.length ?? 0) === 0} onClick={() => startJob.mutate("watch")}>
             {watchRunning ? "Re-checking…" : "Re-check all"}
           </Button>
           <span className="text-xs text-muted" role="status" aria-live="polite">
-            {watchRunning && (frac === null ? "Starting…" : `Checked ${watchJob?.progress} entries so far.`)}
-            {!watchRunning && recheck.isSuccess && (watchJob?.last_ok === false ? `Re-check failed: ${watchJob.last_detail}` : watchJob?.last_detail.startsWith("0 verdict") ? "No verdict changed." : watchJob?.last_detail)}
-            {recheck.isError && `Re-check failed: ${recheck.error.message}`}
-            {!watchRunning && !recheck.isSuccess && !recheck.isError && "A re-check skips the cache and uses source quota."}
+            {watchRunning && (parseProgress(watchJob?.progress ?? "") === null ? "Starting…" : `Checked ${watchJob?.progress} entries so far.`)}
+            {!watchRunning && watchChecked && watchJob && describeWatch(watchJob.last_detail, watchJob.last_ok).text}
+            {startJob.isError && `Re-check failed: ${startJob.error.message}`}
+            {!watchRunning && !watchChecked && !startJob.isError && "A re-check skips the cache and uses source quota."}
           </span>
         </div>
-        {watchRunning && (
-          <div
-            role="progressbar"
-            aria-label="Re-check progress"
-            aria-valuemin={0}
-            aria-valuemax={100}
-            aria-valuenow={frac === null ? undefined : Math.round(frac * 100)}
-            className="mb-3 h-1.5 border border-line-strong"
-          >
-            {frac === null ? (
-              <div className="pixel h-full w-full" />
-            ) : (
-              <div className="hatch h-full text-accent-text" style={{ width: `${frac * 100}%` }} />
-            )}
-          </div>
+        {watchRunning && <JobBar progress={watchJob?.progress ?? ""} label="Re-check progress" />}
+        {!watchRunning && watchChecked && watchEvidence && (
+          <p className="mt-3 border-l-2 border-accent pl-2 text-xs" role="status">
+            {watchEvidence}
+          </p>
         )}
         {watch.data && watch.data.entries.length === 0 && <p className="text-sm text-muted">Nothing watched yet. Open a report and choose Watch.</p>}
         <ul>
           {watch.data?.entries.map((e) => (
-            <li key={e.ioc} className="flex items-center gap-3 border-t border-line py-1.5 first:border-t-0">
-              <span className="mono min-w-0 flex-1 truncate text-[13px]" title={e.ioc}>
-                {shortenMiddle(e.ioc, 34)}
-              </span>
-              {e.last_level ? <LevelBadge level={e.last_level as Level} /> : <span className="label">not checked</span>}
-              <Button variant="ghost" size="sm" onClick={() => remove.mutate(e.ioc)} aria-label={`Stop watching ${e.ioc}`}>
-                Remove
-              </Button>
+            <li key={e.ioc} className="border-t border-line py-1.5 first:border-t-0">
+              <div className="flex items-center gap-3">
+                <span className="mono min-w-0 flex-1 truncate text-[13px]" title={e.ioc}>
+                  {shortenMiddle(e.ioc, 34)}
+                </span>
+                {e.last_level ? <LevelBadge level={e.last_level as Level} /> : <span className="label">not checked</span>}
+                <Button variant="ghost" size="sm" onClick={() => remove.mutate(e.ioc)} aria-label={`Stop watching ${e.ioc}`}>
+                  Remove
+                </Button>
+              </div>
+              <p className="mono mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-muted">
+                <span>added {ago(e.added_at)}</span>
+                <span>{e.last_checked_at ? `checked ${ago(e.last_checked_at)}` : "not checked yet"}</span>
+                {e.last_report_id && (
+                  <button
+                    type="button"
+                    onClick={() => onOpen(e.last_report_id ?? "")}
+                    aria-label={`Open the last report for ${e.ioc}`}
+                    className="text-accent-text underline-offset-2 hover:underline"
+                  >
+                    last report
+                  </button>
+                )}
+              </p>
             </li>
           ))}
         </ul>
@@ -233,22 +259,25 @@ export function Overview({ onCheck, onOpen }: { onCheck: (ioc: string) => void; 
         </p>
         <ul className="space-y-3">
           {sched.data?.map((j) => (
-            <li key={j.name} className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
-              <span className="mono w-14">{j.name}</span>
-              <span className="label">{j.every_hours > 0 ? `every ${j.every_hours} h` : "off"}</span>
-              <span className="text-xs text-muted">
-                {j.last_run ? `last ${ago(j.last_run)}: ${j.last_detail}` : "not run yet"}
-                {j.next_run && ` · next ${ago(j.next_run).replace(" ago", "")}`}
-              </span>
-              <Button size="sm" className="ml-auto" disabled={runJob.isPending} onClick={() => runJob.mutate(j.name)} aria-label={`Run the ${j.name} job now`}>
-                Run now
+            <li key={j.name} className="space-y-1.5">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+                <span className="mono w-14">{j.name}</span>
+                <span className="label">{j.every_hours > 0 ? `every ${j.every_hours} h` : "off"}</span>
+                <span className="text-xs text-muted">
+                  {j.running ? "running…" : j.last_run ? `last ${ago(j.last_run)}${j.last_ok === false ? " (failed)" : ""}: ${j.last_detail}` : "not run yet"}
+                  {!j.running && j.next_run && ` · next ${ago(j.next_run).replace(" ago", "")}`}
+                </span>
+                <Button size="sm" className="ml-auto" disabled={startJob.isPending || j.running} onClick={() => startJob.mutate(j.name)} aria-label={`Run the ${j.name} job now`}>
+                  Run now
                 </Button>
+              </div>
+              {j.running && <JobBar progress={j.progress} label={`${j.name} job progress`} />}
             </li>
           ))}
         </ul>
-        {runJob.isError && (
+        {startJob.isError && (
           <p role="alert" className="mt-2 text-xs text-malicious">
-            {runJob.error.message}
+            {startJob.error.message}
           </p>
         )}
       </Panel>
@@ -261,7 +290,7 @@ export function Overview({ onCheck, onOpen }: { onCheck: (ioc: string) => void; 
           <span className="text-xs text-muted" role="status" aria-live="polite">
             {update.isSuccess && `${update.data.filter((u) => u.ok).length}/${update.data.length} feeds updated.`}
             {update.isError && `Update failed: ${update.error.message}`}
-            {!update.isSuccess && !update.isError && "About 14 MB of public lists, matched on this machine."}
+            {!update.isSuccess && !update.isError && "About 15 MB of public lists (it varies), matched on this machine."}
           </span>
         </div>
         {feeds.data && feeds.data.length === 0 && <p className="text-sm text-muted">No feeds yet. Update them once to enable blocklists, top sites, KEV and EPSS.</p>}
@@ -309,10 +338,14 @@ export function Overview({ onCheck, onOpen }: { onCheck: (ioc: string) => void; 
               className="text-xs"
             />
           </div>
+          <label className="flex items-center gap-2 text-xs">
+            <input type="checkbox" checked={allAttrs} onChange={(e) => setAllAttrs(e.target.checked)} />
+            Include MISP attributes not marked for IDS (to_ids)
+          </label>
           <p className="text-xs text-muted" role="status" aria-live="polite">
             {importFeed.isSuccess && `Imported ${importFeed.data.count} indicator(s) from a ${importFeed.data.format} file as ${importFeed.data.name}.`}
             {importFeed.isError && `Import failed: ${importFeed.error.message}`}
-            {!importFeed.isSuccess && !importFeed.isError && "Imported indicators count as blocklisted. MISP: only attributes marked to_ids."}
+            {!importFeed.isSuccess && !importFeed.isError && "Imported indicators count as blocklisted. MISP: only attributes marked to_ids, unless the box above is ticked."}
           </p>
         </div>
       </Panel>
