@@ -55,7 +55,7 @@ cd web && npm run lint && npm run typecheck && npm test
 - The map must make no remote request (no tiles, no third-party fonts or images): a request would reveal what you investigate.
 - urlscan: search only. No scan submission unless explicitly added, and then `visibility=private` by default.
 - DNS resolution of IOCs is off by default.
-- Treat all source data as attacker-controlled: render as text in the UI (no `dangerouslySetInnerHTML`, no markdown rendering of feed data), defang IOCs in notifications and copy buttons.
+- Treat all source data as attacker-controlled: render as text in the UI (no `dangerouslySetInnerHTML`, no markdown rendering of feed data), defang IOCs in notifications and copy buttons. Control, bidi and invisible characters (Unicode categories Cc, Cf, Zl, Zp) are stripped from feed-derived text (summary, tags, related values) by `clean_text` when a `SourceResult` or `RelatedIOC` is built or loaded; `raw` is the only field kept as received.
 - An error or rate limit never produces a `SAFE` verdict.
 
 ## Testing rules
