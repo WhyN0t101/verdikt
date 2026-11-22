@@ -628,3 +628,11 @@ Not built: a urlscan per-result verdict source (result pages are 13 to 40 MB eac
 | Evaluation | `tests/eval/` corpus, `scripts/eval_report.py`, gate `tests/test_eval.py` | Exact match against `baseline.json`; synthetic labels guard regressions, they do not measure accuracy |
 | Real-world set | `tests/eval/indicators.jsonl` (266 indicators from advisories and vendor documents, labels fixed before recording), `scripts/eval_record.py` (one-time live recording, caps VT 250 / AbuseIPDB 80 / GreyNoise 50 / Hybrid 30), rows in `tests/eval/recorded.jsonl` (open-licence) and git-ignored `tests/eval/local/` | Reported, not gated in CI. First measurement: 250 recorded, dangerous_miss 6/126, false_alarm 0/40, coverage 85.6%; findings: ThreatFox errors on SHA-1, URLhaus on IPv6 |
 
+### 19g. Round 6c: source fixes
+
+| Area | What | Notes |
+|---|---|---|
+| Sources | `BaseSource.handles(ioc)` (default True; part of the `Source` protocol) lets a source decline an indicator beyond its type; the engine asks only sources that `handles` it | ThreatFox no longer takes SHA-1 (`illegal_hash`), URLhaus no longer takes IPv6 (`invalid_host`). Both used to come back as `error` and block SAFE: on the real-world set 5 benign IPv6 resolvers move from unknown to safe |
+| OTX | No change | 15 of 250 recorded rows were errors; five live re-checks of such indicators all returned 200, so it was transient (not reproduced) |
+| Docs | Feed download measured: about 15 MB downloaded, 18 MB on disk, about 5 s | 2026-11-22, varies |
+

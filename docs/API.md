@@ -43,7 +43,7 @@ Responses also carry a strict `Content-Security-Policy` (scripts and connections
 | DELETE | `/api/watchlist?ioc=...` | Stop watching an indicator |
 | POST | `/api/watchlist/recheck` | Re-check every entry without the cache; returns the changes: `before` and `after` level, and `evidence_changed` (true when a source that answered both times changed its level, or too few sources still answer; `before == after` then means an evidence-only change) |
 | GET | `/api/feeds` | Downloaded feeds: `name`, `count`, `fetched_at` |
-| POST | `/api/feeds/update` | Download the feeds (about 14 MB); returns one result per feed |
+| POST | `/api/feeds/update` | Download the feeds (about 15 MB, measured 2026-11-22); returns one result per feed |
 | POST | `/api/extract` | Body `{"text": "..."}` (up to 200,000 characters): indicators found, and skipped ones with the reason. Nothing is looked up |
 | GET | `/api/sources` | Per source: `name`, `enabled`, `requires_key`, `supports`, `used_today`, `daily_budget` |
 | GET | `/api/health` | `{"status": "ok"}` |

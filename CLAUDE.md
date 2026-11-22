@@ -39,7 +39,7 @@ cd web && npm run lint && npm run typecheck && npm test
 
 ## Adding a source
 
-1. One file in `src/verdikt/sources/<name>.py` implementing the `Source` protocol (`name`, `supports`, `requires_key`, `rate`, `ttl`, `daily_budget`, `timeout`, `quota_group`, `enabled`, `async query`); subclass `BaseSource`, which maps timeouts, network errors and malformed bodies to `ERROR`.
+1. One file in `src/verdikt/sources/<name>.py` implementing the `Source` protocol (`name`, `supports`, `requires_key`, `rate`, `ttl`, `daily_budget`, `timeout`, `quota_group`, `enabled`, `handles`, `async query`); subclass `BaseSource`, which maps timeouts, network errors and malformed bodies to `ERROR`.
 2. Map raw response to `SourceResult` and fill `metrics` (plain counts/scores/booleans). No thresholds and no `level` in the source; add rules to `rules.yaml`.
 3. Handle every outcome explicitly: hit, not found (`NOT_FOUND`), 429 (`RATE_LIMITED`), 4xx/5xx/timeout (`ERROR`). Never raise out of `query`.
 4. Set `link` to the source's web page for the IOC.

@@ -9,8 +9,8 @@ Each source lives in one file under `src/verdikt/sources/`. It maps the vendor r
 | `virustotal` | yes | yes | yes | yes | required | 24 h | 500 | high weight |
 | `abuseipdb` | yes | | | | required | 6 h | 1000 | verdict |
 | `urlscan` | yes | yes | yes | sha256 | optional | 12 h | 1000 | context only |
-| `threatfox` | yes | yes | yes | yes | abuse.ch | 6 h | none | high weight |
-| `urlhaus` | yes (host) | yes | yes | | abuse.ch | 6 h | none | high weight |
+| `threatfox` | yes | yes | yes | md5, sha256 | abuse.ch | 6 h | none | high weight |
+| `urlhaus` | IPv4 (host) | yes | yes | | abuse.ch | 6 h | none | high weight |
 | `malwarebazaar` | | | | yes | abuse.ch | 7 d | none | high weight |
 | `otx` | yes | yes | yes | yes | optional | 24 h | none | context only |
 | `greynoise` | yes | | | | optional | 24 h | none | context, benign override |
@@ -65,8 +65,8 @@ Text a source passes on (`summary`, `tags`, related values) is cleaned by the mo
 - **VirusTotal v3.** Key goes in the `x-apikey` header. URLs are looked up by their URL-safe base64 id. Domains also yield their resolved IPs as related indicators; files yield a suggested threat label as a malware-family node.
 - **AbuseIPDB v2.** Key goes in the `Key` header. Looks back 90 days.
 - **urlscan.io.** Search only (`/api/v1/search/`); verdikt never submits a scan, because submissions are public by default and make urlscan visit the target. Context only: on the free plan search rows carry no verdicts, `verdicts.*` fields cannot be searched (HTTP 403) and result pages need a login, so the row reports how many public scans exist and the IPs and domains seen on them. Per-result verdicts could be fetched with a urlscan key; that is not implemented or tested.
-- **ThreatFox (v1 API, `Auth-Key` header).** The IOC search is a substring search, so only entries whose `ioc` equals the indicator (or an IP with a port, `1.2.3.4:80`) count as a match. Malware families become graph nodes.
-- **URLhaus (v1 API).** Host lookups for IPs and domains, URL lookups for URLs. Hash lookups are not used.
+- **ThreatFox (v1 API, `Auth-Key` header).** The IOC search is a substring search, so only entries whose `ioc` equals the indicator (or an IP with a port, `1.2.3.4:80`) count as a match. Malware families become graph nodes. SHA-1 is not searched: its API answers `illegal_hash` ("must be MD5 or SHA256"), which used to show as an error and block SAFE.
+- **URLhaus (v1 API).** Host lookups for IPs and domains, URL lookups for URLs. Hash lookups are not used. IPv6 addresses are not asked: the host endpoint answers `invalid_host` for them, bracketed or not (found in the first real-world recording, 2026-11-24).
 - **MalwareBazaar.** Hash lookups; the signature becomes a malware-family node.
 - **AlienVault OTX.** Counts pulses mentioning the indicator; pulse tags become tags.
 - **GreyNoise Community.** `riot` means a known benign service. It acts only through `benign_override`.

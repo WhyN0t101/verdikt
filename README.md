@@ -200,7 +200,7 @@ verdikt takes care not to leak what you investigate.
 
 ## Local feeds, known-good lists and CVE context
 
-`uv run verdikt feeds update` downloads public data files once (about 14 MB, under 5 seconds) into the feeds folder (`VERDIKT_FEEDS_DIR`, default `feeds` in the user data directory). Lookups then run on your machine: no quota, and the indicator never leaves.
+`uv run verdikt feeds update` downloads public data files once (about 15 MB downloaded and 18 MB on disk, about 5 seconds; measured 2026-11-22 on one connection, it varies) into the feeds folder (`VERDIKT_FEEDS_DIR`, default `feeds` in the user data directory). Lookups then run on your machine: no quota, and the indicator never leaves.
 
 | Feed | Used for |
 |---|---|
@@ -318,7 +318,7 @@ docs/              design notes and reference documents
 | Map shows "No location" | Set `VERDIKT_GEOIP_DIR` to a folder with the two GeoLite2 `.mmdb` files, and use an IP indicator. |
 | A source shows `rate limited` | Its per-minute limit or daily budget is used up, or the service asked for a long wait. Re-run later; the answer was not cached. |
 | `refusing internal ...` | The target is private or matches your internal domains. This is deliberate. |
-| `localfeeds` shows "run `verdikt feeds update`" | The feeds have not been downloaded yet. Run it once (about 14 MB). |
+| `localfeeds` shows "run `verdikt feeds update`" | The feeds have not been downloaded yet. Run it once (about 15 MB). |
 | A POST to the API returns 415 | The API only accepts `Content-Type: application/json`; send `{}` for an empty POST. |
 | `uv` not found | Use `python -m uv`, or add the install directory to your PATH. |
 | API returns 401 or 421 | Missing session token or a `Host` other than `127.0.0.1:<port>` or `localhost:<port>`. See `docs/API.md`. |

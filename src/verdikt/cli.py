@@ -347,7 +347,7 @@ def doctor() -> None:
 def feeds_update(
     top: Annotated[int, typer.Option(help="Tranco top sites to keep")] = DEFAULT_TOP,
 ) -> None:
-    """Download the feeds (about 14 MB). Lookups then run locally with no quota."""
+    """Download the feeds (about 15 MB). Lookups then run locally with no quota."""
     directory = get_settings().resolved_feeds_dir
 
     async def run() -> list[FeedResult]:
