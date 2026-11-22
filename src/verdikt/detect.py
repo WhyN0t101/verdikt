@@ -72,7 +72,13 @@ def is_public_ip(ip: _Addr) -> bool:
     (`64:ff9b::a00:1`, `::a00:1` and `::ffff:0:a00:1` are all 10.0.0.1 in disguise)."""
     if isinstance(ip, _V6) and ip in _SITE_LOCAL:
         return False
-    return ip.is_global and all(v4.is_global for v4 in embedded_ipv4(ip))
+    inner = embedded_ipv4(ip)
+    # multicast is no host: it can never be a threat indicator, and each lookup costs quota
+    return (
+        ip.is_global
+        and not ip.is_multicast
+        and all(v.is_global and not v.is_multicast for v in inner)
+    )
 
 
 def is_internal_host(host: str, extra_suffixes: Iterable[str] = ()) -> bool:

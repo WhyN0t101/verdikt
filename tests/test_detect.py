@@ -168,3 +168,22 @@ def test_extract_lists_them_as_skipped_never_queued() -> None:
     assert sorted(i.value for i in result.items) == ["2606:4700::1111", "8.8.8.8"]
     assert {s.value for s in result.skipped} == {"::a00:1", "fec0::1", "::ffff:0:a00:1"}
     assert all("internal" in s.reason for s in result.skipped)
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "224.0.0.1",
+        "239.255.255.250",  # SSDP: shows up in real IDS exports
+        "ff02::1",
+        "ff05::1",
+        "ff0e::1",
+        "[ff02::1]",
+        "::ffff:224.0.0.1",  # a multicast IPv4 inside IPv6
+        "http://239.255.255.250/x",
+        "http://[ff02::1]/x",
+    ],
+)
+def test_multicast_is_refused_not_looked_up(raw: str) -> None:
+    with pytest.raises(DetectError, match="internal"):
+        detect(raw)
