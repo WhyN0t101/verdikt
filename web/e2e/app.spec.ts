@@ -477,3 +477,47 @@ test("batch triage: a failed add stops, says so, and leaves no empty case behind
   await expect(triage).toContainText("0 added, then it stopped: boom");
   expect(await batchCases()).toBe(before); // the case created for this click was deleted again
 });
+
+test("the source list shows each source, why it is on or off, and the not-found column", async ({ page }) => {
+  await page.goto("/");
+  await check(page, GOOD_IP); // so the source health table has rows
+  await goto(page, "Overview");
+  const list = page.getByRole("region", { name: "Source list" });
+  await expect(list.getByRole("row", { name: /virustotal/ })).toContainText("Enabled");
+  await expect(list.getByRole("row", { name: /localfeeds/ })).toContainText("Off"); // no feed has been downloaded or imported
+  await expect(list).toContainText("never shown here"); // keys are not displayed
+  await expect(page.getByRole("region", { name: "Source health" })).toContainText("Not found");
+});
+
+test("a report can be marked correct with a note, shows when it was checked, and exports as JSON", async ({ page }) => {
+  await page.goto("/");
+  await check(page, GOOD_IP);
+  await expect(page.getByRole("region", { name: "Diagnostics" })).toContainText("Checked");
+
+  await page.getByLabel("Feedback note (optional)").fill("Confirmed with the owner");
+  await page.getByRole("button", { name: "Correct" }).click();
+  await expect(page.getByText("Feedback recorded.")).toBeVisible();
+  await expect(page.getByLabel("Feedback note (optional)")).toHaveValue(""); // the note went with the label
+
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export JSON", exact: true }).click();
+  const file = await download;
+  expect(file.suggestedFilename()).toMatch(/^verdikt-[0-9a-f]+\.json$/);
+  const text = await (await import("node:fs/promises")).readFile((await file.path()) ?? "", "utf-8");
+  expect(JSON.parse(text).ioc).toBe(GOOD_IP);
+  expect(text).not.toContain('"fake"'); // vendor raw payloads stay out of the export
+
+  await goto(page, "Overview");
+  await expect(page.getByRole("region", { name: "Feedback" })).toContainText("Correct");
+});
+
+test("the watchlist shows its size against the limit and when each entry was added", async ({ page }) => {
+  await page.goto("/");
+  await check(page, GOOD_IP);
+  await page.getByRole("button", { name: "Watch", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Watching" })).toBeDisabled();
+  await goto(page, "Overview");
+  const watch = page.getByRole("region", { name: "Watchlist" });
+  await expect(watch).toContainText(/Watchlist, 1 of \d+/);
+  await expect(watch).toContainText("added");
+});
