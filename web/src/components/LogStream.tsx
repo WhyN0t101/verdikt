@@ -18,7 +18,7 @@ export function LogStream({ report }: { report: Report | null }) {
               <span className="text-muted">[{clock(r.fetched_at)}]</span>{" "}
               <span className="uppercase">{r.source}</span>{" "}
               <span className={LEVEL_TEXT[r.level]}>{r.status === "ok" ? r.level.toUpperCase() : r.status.toUpperCase()}</span>
-              <div className="text-muted">{r.summary}</div>
+              <div className="feed-text text-muted">{r.summary}</div>
             </li>
           ))}
         </ol>

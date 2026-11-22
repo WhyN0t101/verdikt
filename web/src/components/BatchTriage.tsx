@@ -25,48 +25,68 @@ export function BatchTriage({ reports }: { reports: Report[] }) {
   const watched = watch.data?.entries.map((e) => e.ioc) ?? [];
   const plan = watchPlan(picked, watched, max);
 
-  async function addToCase() {
+  /** One sequential loop for both actions: counter text, Stop, and the first error ends it. */
+  async function runEach<T>(items: T[], step: (item: T) => Promise<unknown>, verb: string) {
     stop.current = false;
     setResult(null);
-    let added = 0;
+    let done = 0;
+    let failure: string | null = null;
     try {
-      // the title carries no indicator, so nothing raw can leak into an export
-      const caseId = target === NEW_CASE ? (await api.caseCreate(`Batch triage, ${stamp()}`)).id : target;
-      for (const r of picked) {
+      for (const item of items) {
         if (stop.current) break;
-        setBusy(`Adding ${added + 1} of ${picked.length}`);
-        await api.caseAdd(caseId, r.id);
-        added++;
+        setBusy(`${verb} ${done + 1} of ${items.length}`);
+        await step(item);
+        done++;
       }
-      setResult({ text: `${added} added to the case${added < picked.length ? `, ${picked.length - added} not added` : ""}.`, failed: false });
     } catch (e) {
-      setResult({ text: `${added} added, then it stopped: ${errorText(e)}`, failed: true });
+      failure = errorText(e);
     } finally {
       setBusy(null);
-      void qc.invalidateQueries({ queryKey: ["cases"] });
     }
+    return { done, failure };
+  }
+
+  async function addToCase() {
+    let caseId = target;
+    const created = target === NEW_CASE;
+    if (created) {
+      try {
+        // the title carries no indicator, so nothing raw can leak into an export
+        caseId = (await api.caseCreate(`Batch triage, ${stamp()}`)).id;
+      } catch (e) {
+        setResult({ text: `Could not create the case: ${errorText(e)}`, failed: true });
+        return;
+      }
+    }
+    const { done, failure } = await runEach(picked, (r) => api.caseAdd(caseId, r.id), "Adding");
+    let left = "";
+    if (created && done === 0) {
+      // nothing went in: do not leave an empty case behind
+      left = await api.caseDelete(caseId).then(
+        () => "",
+        () => " An empty case was left behind; delete it on the Cases page.",
+      );
+    } else if (created) {
+      await qc.refetchQueries({ queryKey: ["cases"] });
+      setTarget(caseId); // a second click adds to this case instead of creating another
+    }
+    void qc.invalidateQueries({ queryKey: ["cases"] });
+    void qc.invalidateQueries({ queryKey: ["history"] });
+    setResult(
+      failure
+        ? { text: `${done} added, then it stopped: ${failure}.${left}`, failed: true }
+        : { text: `${done} added to the case${done < picked.length ? `, ${picked.length - done} not added` : ""}.`, failed: false },
+    );
   }
 
   async function watchAll() {
-    stop.current = false;
-    setResult(null);
-    let added = 0;
-    try {
-      for (const r of plan.toAdd) {
-        if (stop.current) break;
-        setBusy(`Watching ${added + 1} of ${plan.toAdd.length}`);
-        qc.setQueryData(["watchlist"], await api.watchAdd(r.id));
-        added++;
-      }
-      const parts = [`${added} added`];
-      if (plan.skippedAlready) parts.push(`${plan.skippedAlready} already watched`);
-      if (plan.skippedCap) parts.push(`${plan.skippedCap} skipped: watchlist is full (${max})`);
-      setResult({ text: `${parts.join(", ")}.`, failed: false });
-    } catch (e) {
-      setResult({ text: `${added} added, then it stopped: ${errorText(e)}`, failed: true });
-    } finally {
-      setBusy(null);
-    }
+    const { done, failure } = await runEach(plan.toAdd, async (r) => qc.setQueryData(["watchlist"], await api.watchAdd(r.id)), "Watching");
+    void qc.invalidateQueries({ queryKey: ["history"] });
+    if (failure) return setResult({ text: `${done} added, then it stopped: ${failure}.`, failed: true });
+    const parts = [`${done} added`];
+    if (plan.skippedAlready) parts.push(`${plan.skippedAlready} already watched`);
+    if (plan.skippedCap) parts.push(`${plan.skippedCap} skipped: watchlist is full (${max})`);
+    setResult({ text: `${parts.join(", ")}.`, failed: false });
   }
 
   if (reports.length === 0) return null;
@@ -113,6 +133,7 @@ export function BatchTriage({ reports }: { reports: Report[] }) {
         <Button size="sm" variant="primary" disabled={none || !target || busy !== null} onClick={() => void addToCase()}>
           Add {picked.length} to case
         </Button>
+        {!target && !none && <span className="text-xs text-muted">Choose a case first.</span>}
         <Button size="sm" disabled={plan.toAdd.length === 0 || busy !== null || !watch.data} onClick={() => void watchAll()}>
           Watch {plan.toAdd.length}
         </Button>

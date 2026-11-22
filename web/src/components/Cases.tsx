@@ -153,10 +153,10 @@ function Editor({
 }
 
 /** Investigations: a case groups reports with notes and tags, and exports as one document. */
-export function Cases({ onOpen }: { onOpen: (reportId: string) => void }) {
+export function Cases({ onOpen, initialId = null }: { onOpen: (reportId: string) => void; initialId?: string | null }) {
   const qc = useQueryClient();
   const [tag, setTag] = useState<string | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(initialId);
   const [title, setTitle] = useState("");
   const all = useQuery({ queryKey: ["cases"], queryFn: () => api.cases() });
   const tags = [...new Set((all.data ?? []).flatMap((c) => c.tags))].sort();

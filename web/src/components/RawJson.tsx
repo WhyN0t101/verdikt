@@ -7,7 +7,7 @@ export function RawJson({ id }: { id: string }) {
   if (q.isPending) return <div className="pixel absolute inset-x-4 top-14 h-24" role="status" aria-label="Loading raw JSON" />;
   if (q.isError) return <p className="absolute inset-0 p-4 pt-14 text-sm text-malicious">Could not load the raw report: {q.error.message}</p>;
   return (
-    <pre className="mono absolute inset-0 overflow-auto bg-panel p-4 pt-14 text-xs">
+    <pre className="mono feed-text absolute inset-0 overflow-auto bg-panel p-4 pt-14 text-xs">
       {JSON.stringify(q.data, null, 2)}
     </pre>
   );

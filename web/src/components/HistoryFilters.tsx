@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { LEVEL_LABEL, LEVEL_ORDER, typeTag } from "../lib/format";
-import { IOC_TYPES, type HistoryFilter, Q_MAX, isFiltered } from "../lib/historyQuery";
+import { IOC_TYPES, LEVEL_LABEL, LEVEL_ORDER, typeTag } from "../lib/format";
+import { type HistoryFilter, Q_MAX, isFiltered } from "../lib/historyQuery";
 import type { IOCType, Level } from "../model";
 import { Button, FIELD } from "./ui";
 

@@ -1,4 +1,4 @@
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { CommandBar } from "./components/CommandBar";
@@ -72,6 +72,9 @@ export default function App() {
   const [view, setView] = useState<View>("check");
   const [theme, setTheme] = useState<Theme>(initialTheme);
   const [openError, setOpenError] = useState<string | null>(null);
+  // a counter so asking for the same row twice moves focus again; tied to a report so a new report never steals focus
+  const [focusSource, setFocusSource] = useState<{ id: string; name: string; n: number } | null>(null);
+  const [openCaseId, setOpenCaseId] = useState<string | null>(null);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -89,6 +92,7 @@ export default function App() {
     queryKey: ["reports", filter],
     queryFn: ({ pageParam }) => api.reports(reportParams(filter, pageParam)),
     initialPageParam: 0,
+    placeholderData: keepPreviousData, // no empty flash (and no "No report matches.") while a new filter loads
     getNextPageParam: (last, all) => (last.length === PAGE_SIZE ? all.length * PAGE_SIZE : undefined),
   });
   const historyItems = history.data?.pages.flat() ?? [];
@@ -166,6 +170,12 @@ export default function App() {
     if (location.hash !== next) location.hash = next;
   }, [report, tab]);
 
+  const showSource = (name: string) => report && setFocusSource((f) => ({ id: report.id, name, n: (f?.n ?? 0) + 1 }));
+  const openCase = (id: string) => {
+    setOpenCaseId(id);
+    setView("cases");
+  };
+
   const vt = sources.data?.find((s) => s.name === "virustotal");
   const enabled = sources.data?.filter((s) => s.enabled) ?? [];
   // keyless sources (InternetDB, OTX, ...) are always on, so test for any key-gated source
@@ -210,7 +220,7 @@ export default function App() {
       )}
       {view === "cases" && (
         <div className="min-h-0 flex-1 overflow-auto">
-          <Cases onOpen={(id) => void open(id)} />
+          <Cases key={openCaseId ?? "list"} initialId={openCaseId} onOpen={(id) => void open(id)} />
         </div>
       )}
       {view === "batch" && (
@@ -226,9 +236,15 @@ export default function App() {
           <HistoryList items={historyItems} activeId={report?.id ?? null} onSelect={(id) => void open(id)} filtered={isFiltered(filter)} />
           {historyItems.length > 0 && (
             <div className="flex flex-wrap gap-2 px-3 pt-3">
-              {history.hasNextPage && (
-                <Button size="sm" disabled={history.isFetchingNextPage} onClick={() => void history.fetchNextPage()}>
-                  {history.isFetchingNextPage ? "Loading…" : "Load more"}
+              {(history.hasNextPage || (history.data?.pages.length ?? 0) > 1) && (
+                // aria-disabled, not disabled: a disabled button drops keyboard focus, which is the point of keeping it mounted
+                <Button
+                  size="sm"
+                  aria-disabled={!history.hasNextPage || history.isFetchingNextPage}
+                  className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50"
+                  onClick={() => history.hasNextPage && !history.isFetchingNextPage && void history.fetchNextPage()}
+                >
+                  {history.isFetchingNextPage ? "Loading…" : history.hasNextPage ? "Load more" : "No more reports"}
                 </Button>
               )}
               <Button size="sm" variant="ghost" onClick={() => downloadText("verdikt-history.csv", historyCsv(historyItems), "text/csv")}>
@@ -287,7 +303,7 @@ export default function App() {
               <>
                 {tab === "map" ? (
                   <div className="absolute bottom-4 left-4 z-10 w-[calc(100%-2rem)] max-w-md">
-                    <VerdictHud report={report} onRecheck={() => run(report.ioc, true)} busy={check.isPending} />
+                    <VerdictHud report={report} onRecheck={() => run(report.ioc, true)} busy={check.isPending} onShowSource={showSource} />
                   </div>
                 ) : (
                   <section aria-label="Verdict" className="hud absolute left-4 top-14 z-10 flex items-center gap-3 px-3 py-2 sm:top-4">
@@ -316,14 +332,14 @@ export default function App() {
 
           {(check.isPending || report) && (
             <div className="max-h-[36%] shrink-0 overflow-auto border-t border-line">
-              <SourceTable report={check.isPending ? null : report} pending={check.isPending ? enabled : null} />
+              <SourceTable report={check.isPending ? null : report} pending={check.isPending ? enabled : null} focus={focusSource?.id === report?.id ? focusSource : null} />
             </div>
           )}
         </main>
 
         <div className="order-2 border-t border-line bg-panel lg:order-none lg:col-span-2 lg:overflow-y-auto xl:col-span-1 xl:border-l xl:border-t-0">
           <Diagnostics report={showReport ? report : null} />
-          {showReport && report && <ReportActions report={report} onOpen={(id) => void open(id)} />}
+          {showReport && report && <ReportActions report={report} onOpen={(id) => void open(id)} onOpenCase={openCase} />}
           <Waterfall report={showReport ? report : null} />
           <LogStream report={check.isPending ? null : report} />
           {quotas.length > 0 && (
