@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import os
 import sys
+from collections.abc import Iterable
 from functools import lru_cache
 from importlib import resources
 from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, Field, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from verdikt.models import Level
@@ -18,7 +19,16 @@ from verdikt.models import Level
 MIN_JOB_HOURS = 1.0
 
 
+def _source_names() -> frozenset[str]:
+    from verdikt.sources import build_sources  # late: sources import this module
+
+    return frozenset(s.name for s in build_sources(Settings(_env_file=None)))  # pyright: ignore[reportCallIssue]
+
+
 class Rules(BaseModel):
+    # a misspelt key or source name used to be ignored, silently turning MALICIOUS into SUSPICIOUS
+    model_config = ConfigDict(extra="forbid")
+
     malicious: dict[str, dict[str, bool | int]] = Field(default_factory=dict)
     suspicious: dict[str, dict[str, bool | int]] = Field(default_factory=dict)
     benign_override: dict[str, dict[str, bool | int]] = Field(default_factory=dict)
@@ -32,6 +42,27 @@ class Rules(BaseModel):
     default_weight: int = 1
     confidence_high: int = 5
     confidence_medium: int = 3
+
+    @model_validator(mode="after")
+    def _check_names_and_bands(self) -> Rules:
+        known = _source_names()
+        sections: dict[str, Iterable[str]] = {
+            "malicious": self.malicious,
+            "suspicious": self.suspicious,
+            "benign_override": self.benign_override,
+            "weights": self.weights,
+            "high_weight": self.high_weight,
+            "context_only": self.context_only,
+            "listing_feeds": self.listing_feeds,
+        }
+        for section, names in sections.items():
+            for name in names:
+                if name not in known:
+                    options = ", ".join(sorted(known))
+                    raise ValueError(f"rules: unknown source {name!r} in `{section}` ({options})")
+        if self.confidence_high < self.confidence_medium:
+            raise ValueError("rules: confidence_high must be at least confidence_medium")
+        return self
 
 
 def user_data_dir() -> Path:
