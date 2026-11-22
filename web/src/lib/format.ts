@@ -76,3 +76,9 @@ export function clock(iso: string): string {
   const d = new Date(iso);
   return [d.getHours(), d.getMinutes(), d.getSeconds()].map((n) => String(n).padStart(2, "0")).join(":");
 }
+
+/** "EPSS 4.2%" and, when the feed gives it, where that ranks among all CVEs ("percentile 92"). */
+export function epssText(epss: number, percentile?: number | null): string {
+  const base = `EPSS ${(epss * 100).toFixed(1)}%`;
+  return percentile === null || percentile === undefined ? base : `${base}, percentile ${Math.round(percentile * 100)}`;
+}

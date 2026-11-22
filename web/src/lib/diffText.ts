@@ -19,8 +19,9 @@ export function metricValue(v: MetricChange["from"]): string {
 
 export function confidenceChange(d: ReportDiff): string {
   const now = `${d.agreeing_to} of ${d.total_to} sources agree`;
-  if (d.agreeing_from === null || d.total_from === null) return now;
-  return d.agreeing_from === d.agreeing_to && d.total_from === d.total_to ? now : `${d.agreeing_from} of ${d.total_from} to ${now}`;
+  const counts = d.agreeing_from === null || d.total_from === null || (d.agreeing_from === d.agreeing_to && d.total_from === d.total_to) ? now : `${d.agreeing_from} of ${d.total_from} to ${now}`;
+  const label = d.confidence_from && d.confidence_from !== d.confidence_to ? `${d.confidence_from} to ${d.confidence_to}` : d.confidence_to;
+  return `${counts}, ${label} confidence`;
 }
 
 /** True when the verdict itself moved: the block opens by default then. */

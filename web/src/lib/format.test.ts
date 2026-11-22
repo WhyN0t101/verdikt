@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ago, clock, defang, formatDuration, formatQuota, shortenMiddle, typeTag } from "./format";
+import { ago, clock, defang, epssText, formatDuration, formatQuota, shortenMiddle, typeTag } from "./format";
 
 describe("defang", () => {
   it.each([
@@ -38,4 +38,10 @@ describe("ago", () => {
     ["2025-12-31T12:00:00Z", "2 d ago"],
     ["not a date", "-"],
   ])("%s", (iso, want) => expect(ago(iso, now)).toBe(want));
+});
+
+describe("epssText", () => {
+  it("score only", () => expect(epssText(0.048, null)).toBe("EPSS 4.8%"));
+  it("score and percentile", () => expect(epssText(0.042, 0.923)).toBe("EPSS 4.2%, percentile 92"));
+  it("missing percentile", () => expect(epssText(0.5)).toBe("EPSS 50.0%"));
 });

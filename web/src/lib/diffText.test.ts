@@ -58,9 +58,11 @@ const diff = (p: Partial<ReportDiff>): ReportDiff => ({
 });
 
 describe("confidenceChange", () => {
-  it("shows before and after", () => expect(confidenceChange(diff({}))).toBe("2 of 6 to 4 of 6 sources agree"));
-  it("unchanged counts read once", () => expect(confidenceChange(diff({ agreeing_from: 4 }))).toBe("4 of 6 sources agree"));
-  it("no previous report", () => expect(confidenceChange(diff({ agreeing_from: null, total_from: null }))).toBe("4 of 6 sources agree"));
+  it("shows before and after", () => expect(confidenceChange(diff({}))).toBe("2 of 6 to 4 of 6 sources agree, medium to high confidence"));
+  it("unchanged counts read once", () => expect(confidenceChange(diff({ agreeing_from: 4, confidence_from: "high" }))).toBe("4 of 6 sources agree, high confidence"));
+  it("only the label changed", () => expect(confidenceChange(diff({ agreeing_from: 4 }))).toBe("4 of 6 sources agree, medium to high confidence"));
+  it("no previous report", () =>
+    expect(confidenceChange(diff({ agreeing_from: null, total_from: null, confidence_from: null }))).toBe("4 of 6 sources agree, high confidence"));
 });
 
 describe("levelMoved", () => {
