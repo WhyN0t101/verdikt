@@ -9,7 +9,9 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 
+from verdikt.config import Rules
 from verdikt.detect import DetectError
+from verdikt.diff import diff_reports
 from verdikt.engine import Engine
 from verdikt.models import Level, Model, Report, Status
 
@@ -23,6 +25,9 @@ class WatchChange(Model):
     before: str
     after: str
     report_id: str
+    # the evidence under the verdict moved (a source changed its level, or too few sources still
+    # answer); `before == after` then means an evidence-only change
+    evidence_changed: bool = False
 
 
 def failed_lookup(report: Report) -> bool:
@@ -30,6 +35,29 @@ def failed_lookup(report: Report) -> bool:
     return report.level is Level.UNKNOWN and any(
         r.status in (Status.ERROR, Status.RATE_LIMITED) for r in report.results
     )
+
+
+_ANSWERED = (Status.OK, Status.NOT_FOUND)
+
+
+def evidence_changed(old: Report | None, new: Report, rules: Rules) -> bool:
+    """Did the evidence move, apart from sources that only flipped between answering and not?
+
+    A rate limit or timeout makes a source flap; that alone is noise. It counts only when so
+    many drop out that fewer than `min_sources_for_safe` verdict-bearing sources still answer.
+    """
+    if old is None:
+        return False
+    flapped = False
+    for c in diff_reports(old, new).sources:
+        both_answered = c.status_from in _ANSWERED and c.status_to in _ANSWERED
+        if both_answered and c.level_from != c.level_to:
+            return True
+        flapped = flapped or not both_answered
+    if flapped:
+        floor = rules.min_sources_for_safe
+        return new.total < floor <= old.total
+    return old.confidence != new.confidence
 
 
 async def recheck(
@@ -59,13 +87,24 @@ async def recheck(
         if report is None:
             continue
         if failed_lookup(report):
-            continue  # keep the last good verdict; a transient error must not raise a change event
+            # keep the last good verdict (a transient error is no change event), but the entry
+            # was checked just now
+            engine.cache.watch_touch(entry.ioc)
+            continue
+        old = engine.cache.get_report(entry.last_report_id) if entry.last_report_id else None
+        moved = evidence_changed(old, report, engine.rules)
         before = engine.cache.watch_record(report)
-        if before is not None:
+        if before is not None or moved:
             changes.append(
                 WatchChange(
-                    ioc=entry.ioc, before=before, after=report.level.value, report_id=report.id
+                    ioc=entry.ioc,
+                    before=before or report.level.value,
+                    after=report.level.value,
+                    report_id=report.id,
+                    evidence_changed=moved,
                 )
             )
-            changed_reports.append(report)
+            # a verdict change always notifies; evidence alone only with VERDIKT_WATCH_NOTIFY_ANY
+            if before is not None or engine.settings.watch_notify_any:
+                changed_reports.append(report)
     return changes, changed_reports

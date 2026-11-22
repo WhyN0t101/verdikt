@@ -477,7 +477,10 @@ def watch_run(
 
     changes = asyncio.run(_with_engine(settings, run))
     for c in changes:
-        out.print(f"{c.ioc}: {c.before} -> {c.after}", markup=False)
+        line = f"{c.ioc}: {c.before} -> {c.after}"
+        if c.before == c.after:
+            line = f"{c.ioc}: {c.after}, evidence changed (a source moved or too few answer)"
+        out.print(line, markup=False)
     if not changes:
         out.print("no changes", markup=False)
 

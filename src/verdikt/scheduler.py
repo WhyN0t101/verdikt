@@ -156,8 +156,12 @@ class Scheduler:
                     self._engine.cache,
                 )
                 sent += outcome.sent
-        return f"{len(changes)} verdict change(s)" + (
-            f", {sent} notification(s)" if platform else ""
+        verdicts = sum(c.before != c.after for c in changes)
+        evidence = len(changes) - verdicts
+        return (
+            f"{verdicts} verdict change(s)"
+            + (f", {evidence} evidence change(s)" if evidence else "")
+            + (f", {sent} notification(s)" if platform else "")
         )
 
     async def _feeds(self) -> str:

@@ -1150,6 +1150,11 @@ export interface components {
             after: string;
             /** Report Id */
             report_id: string;
+            /**
+             * Evidence Changed
+             * @default false
+             */
+            evidence_changed: boolean;
         };
         /** WatchEntry */
         WatchEntry: {
