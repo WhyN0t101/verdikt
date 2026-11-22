@@ -41,7 +41,7 @@ Responses also carry a strict `Content-Security-Policy` (scripts and connections
 | GET | `/api/watchlist` | Watched entries, the latest verdict changes and `max_entries` (the cap, 50) |
 | POST | `/api/watchlist` | Body `{"report_id": "..."}`: watch that report's indicator, using it as the baseline. `409` when the list (50) is full |
 | DELETE | `/api/watchlist?ioc=...` | Stop watching an indicator |
-| POST | `/api/watchlist/recheck` | Re-check every entry without the cache; returns the verdict changes |
+| POST | `/api/watchlist/recheck` | Re-check every entry without the cache; returns the changes: `before` and `after` level, and `evidence_changed` (true when a source that answered both times changed its level, or too few sources still answer; `before == after` then means an evidence-only change) |
 | GET | `/api/feeds` | Downloaded feeds: `name`, `count`, `fetched_at` |
 | POST | `/api/feeds/update` | Download the feeds (about 14 MB); returns one result per feed |
 | POST | `/api/extract` | Body `{"text": "..."}` (up to 200,000 characters): indicators found, and skipped ones with the reason. Nothing is looked up |

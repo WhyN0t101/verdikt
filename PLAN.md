@@ -263,7 +263,7 @@ class Source(Protocol):
 1. Detect IOC.
 2. Pick sources that support the type and are `enabled` (a key is set, or none is needed).
 3. For each source: cache hit within TTL → use it; else, per attempt (including retries): check daily budget → acquire limiter → query with timeout.
-   - shortcut: limiter and budget are per process; `verdikt ui` + `verdikt bulk` at once double the rate. Move budget/limiter state to sqlite if that becomes normal.
+   - shortcut: only the rate limiter is per process, so `verdikt ui` + `verdikt bulk` at once double the per-minute rate. The daily budget is in SQLite and shared (`Cache.charge`, one atomic statement). Move the limiter state to sqlite if that becomes normal.
 4. `asyncio.gather(..., return_exceptions=True)`: one failing source yields `Status.ERROR`, never a failed report.
 5. Enrich: geo for every IP in the IOC and in `related`; CVE context (CISA KEV, EPSS) for the CVEs InternetDB reports; DNS only if enabled. Identical lookups running at the same moment share one request.
 6. Build the graph from `related`.
@@ -410,7 +410,7 @@ Exit codes (kept off 1 and 2, which Python crashes and Click usage errors alread
 | GET | `/api/health` | Liveness |
 | GET | `/api/stats` | Dashboard data: checks per day, source health, recurring infrastructure, feedback counts |
 | GET, POST, DELETE | `/api/watchlist` | List with recent changes and the cap (`max_entries`); watch a report's indicator (`{report_id}`); stop watching (`?ioc=`) |
-| POST | `/api/watchlist/recheck` | Re-check every entry now (bypasses the cache); returns the verdict changes |
+| POST | `/api/watchlist/recheck` | Re-check every entry now (bypasses the cache); returns the changes (`before`, `after`, `evidence_changed`) |
 | GET | `/api/feeds` | Downloaded and imported feeds with entry counts |
 | POST | `/api/feeds/update` | Download the feeds |
 | POST, DELETE | `/api/feeds/import` | Import a MISP event or STIX bundle as a local list (`{name, content}`); remove one (`?name=`) |
@@ -616,3 +616,14 @@ Not built: a urlscan per-result verdict source (result pages are 13 to 40 MB eac
 | Provenance | The Markdown and HTML exports have an Evidence table (source, status, level, fetched UTC, cached, defanged page, rules that fired). A cache hit keeps the original `fetched_at` | No live link, no `raw`. `Report` and `schema_version` are unchanged (a stored `rules_id` was not built) |
 | History | `GET /api/reports/{id}/history` (section 12) | Reuses `ReportSummary`, `CaseSummary` and `WatchEvent`; no new table |
 | Small | `previous_report` skips unreadable rows (tries the newest 5); `against` is at most 64 characters; `scripts/e2e_server.py` has `FLIP` (9.9.9.9: clean once, then malicious) | |
+
+### 19f. Round 6: hardening, speed, evaluation
+
+| Area | What | Notes |
+|---|---|---|
+| Detect | IPv6 forms that hide a non-global IPv4 and `fec0::/10` are internal (one helper, `detect.is_public_ip`); multicast addresses are refused | `10.0.0.1.nip.io` is a public name and stays accepted (design limit, README) |
+| Rules | `Rules` forbids unknown keys, checks every source name and `confidence_high >= confidence_medium`; a test checks every rule metric is one a source produces | A typo used to turn MALICIOUS into SUSPICIOUS silently |
+| Speed | Index `reports(ioc, created_at DESC)`; SQLite WAL + `synchronous=NORMAL` for file databases; lazy `ioc_finder` import; `clean_text` fast path | Measured: `check()` with 12 fake sources 124 ms to 4.7 ms, history lookup 22.8 ms to 0.02 ms, `import verdikt.cli` 1770 ms to 1340 ms, report load 1.35 ms to 0.41 ms. No verdict changes |
+| Watch | `WatchChange.evidence_changed`; a skipped failed lookup still refreshes `last_checked_at` | Noise policy in `watch.evidence_changed`; no table or `schema_version` change |
+| Evaluation | `tests/eval/` corpus, `scripts/eval_report.py`, gate `tests/test_eval.py` | Exact match against `baseline.json`; synthetic labels guard regressions, they do not measure accuracy |
+

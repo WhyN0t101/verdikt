@@ -16,6 +16,7 @@ uv run pytest                             # backend tests
 uv run pytest tests/test_verdict.py -q    # single file
 uv run ruff check . && uv run ruff format --check .
 uv run pyright
+uv run python scripts/eval_report.py     # verdict evaluation over tests/eval (gate: pytest tests/test_eval.py)
 uv run verdikt check 8.8.8.8              # CLI
 uv run verdikt ui --dev                   # API with reload; run Vite separately
 cd web && npm ci && npm run dev           # frontend dev server (proxies /api)
@@ -66,6 +67,7 @@ cd web && npm run lint && npm run typecheck && npm test
 - `verdict` tests are table-driven and must cover: errors-are-not-clean, high-weight `RATE_LIMITED` blocks `SAFE`, INFO rows don't count toward `min_sources_for_safe`, benign override cannot clear `MALICIOUS`.
 - Tests are deterministic: freeze time where TTL/caching matters, no sleeps (patch the limiter).
 - Bug fix = regression test first.
+- Verdict behaviour changes (`rules.yaml`, `verdict.decide`) must update `tests/eval/baseline.json` in the same commit (`python scripts/eval_report.py --update-baseline`); the diff is the review.
 
 ## Code style (project-specific)
 
