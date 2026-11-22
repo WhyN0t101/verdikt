@@ -484,7 +484,10 @@ test("the source list shows each source, why it is on or off, and the not-found 
   await goto(page, "Overview");
   const list = page.getByRole("region", { name: "Source list" });
   await expect(list.getByRole("row", { name: /virustotal/ })).toContainText("Enabled");
-  await expect(list.getByRole("row", { name: /localfeeds/ })).toContainText("Off"); // no feed has been downloaded or imported
+  // localfeeds is Off until a list exists, and the MISP import spec leaves one behind, so any order must pass
+  const feeds = list.getByRole("row", { name: /localfeeds/ });
+  await expect(feeds).toContainText(/Off|Enabled/);
+  await expect(feeds).toContainText("sha256"); // the indicator types it takes
   await expect(list).toContainText("never shown here"); // keys are not displayed
   await expect(page.getByRole("region", { name: "Source health" })).toContainText("Not found");
 });
