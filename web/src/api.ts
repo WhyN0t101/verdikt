@@ -1,4 +1,4 @@
-import type { CaseDetail, CaseSummary, Extraction, FeedImport, IOCType, JobStatus, FeedInfo, FeedUpdate, FeedbackLabel, Level, IocHistory, Report, ReportDiff, ReportSummary, SourceInfo, Stats, WatchChange, WatchState } from "./model";
+import type { CaseDetail, CaseSummary, Extraction, FeedImport, IOCType, JobStatus, FeedInfo, FeedUpdate, FeedbackLabel, Level, IocHistory, Report, ReportDiff, ReportSummary, SourceInfo, Stats, WatchState } from "./model";
 
 // The server injects a per-run token into the served page; the browser never sees API keys.
 function token(): string {
@@ -49,14 +49,13 @@ export const api = {
     call<ReportDiff>(`/api/reports/${encodeURIComponent(id)}/diff${against ? `?against=${encodeURIComponent(against)}` : ""}`),
   report: (id: string, raw = false) => call<Report>(`/api/reports/${encodeURIComponent(id)}?raw=${raw}`),
   sources: () => call<SourceInfo[]>("/api/sources"),
-  feedback: (id: string, label: FeedbackLabel) =>
-    call<unknown>(`/api/reports/${encodeURIComponent(id)}/feedback`, { method: "POST", body: JSON.stringify({ label }) }),
+  feedback: (id: string, label: FeedbackLabel, note?: string) =>
+    call<unknown>(`/api/reports/${encodeURIComponent(id)}/feedback`, { method: "POST", body: JSON.stringify(note ? { label, note } : { label }) }),
   stats: (days = 30) => call<Stats>(`/api/stats?days=${days}`),
   watchlist: () => call<WatchState>("/api/watchlist"),
   watchAdd: (reportId: string) =>
     call<WatchState>("/api/watchlist", { method: "POST", body: JSON.stringify({ report_id: reportId }) }),
   watchRemove: (ioc: string) => call<WatchState>(`/api/watchlist?ioc=${encodeURIComponent(ioc)}`, { method: "DELETE" }),
-  recheck: () => call<WatchChange[]>("/api/watchlist/recheck", { method: "POST" }),
   feeds: () => call<FeedInfo[]>("/api/feeds"),
   feedsUpdate: () => call<FeedUpdate[]>("/api/feeds/update", { method: "POST" }),
   extract: (text: string) => call<Extraction>("/api/extract", { method: "POST", body: JSON.stringify({ text }) }),
@@ -72,10 +71,9 @@ export const api = {
   caseRemove: (id: string, reportId: string) =>
     call<CaseDetail>(`/api/cases/${encodeURIComponent(id)}/reports/${encodeURIComponent(reportId)}`, { method: "DELETE" }),
   scheduler: () => call<JobStatus[]>("/api/scheduler"),
-  schedulerRun: (name: string) => call<JobStatus>(`/api/scheduler/${encodeURIComponent(name)}/run`, { method: "POST" }),
   schedulerStart: (name: string) => call<JobStatus>(`/api/scheduler/${encodeURIComponent(name)}/start`, { method: "POST" }),
-  feedsImport: (name: string, content: string) =>
-    call<FeedImport>("/api/feeds/import", { method: "POST", body: JSON.stringify({ name, content }) }),
+  feedsImport: (name: string, content: string, allAttributes = false) =>
+    call<FeedImport>("/api/feeds/import", { method: "POST", body: JSON.stringify({ name, content, all_attributes: allAttributes }) }),
   feedsForget: (name: string) => call<FeedInfo[]>(`/api/feeds/import?name=${encodeURIComponent(name)}`, { method: "DELETE" }),
   /** A file the API builds (report or case export, MISP event): text, fetched with the token header. */
   download: async (path: string) => (await request(path)).text(),

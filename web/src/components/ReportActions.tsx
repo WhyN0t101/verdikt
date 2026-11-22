@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { api } from "../api";
 import { downloadText } from "../lib/csv";
-import { defang, shortenMiddle } from "../lib/format";
+import { defang, epssText, shortenMiddle } from "../lib/format";
 import type { CveInfo, FeedbackLabel, Report } from "../model";
 import { LEVEL_BG } from "./LevelBadge";
 import { IocHistory } from "./IocHistory";
@@ -12,6 +12,7 @@ import { Button, FIELD, SectionTitle } from "./ui";
 const FEEDBACK: { label: FeedbackLabel; text: string }[] = [
   { label: "false_positive", text: "False positive" },
   { label: "false_negative", text: "False negative" },
+  { label: "correct", text: "Correct" },
 ];
 
 /** CVEs found on the host with CISA KEV and EPSS context. Context only, never a verdict input. */
@@ -35,12 +36,13 @@ function Vulnerabilities({ cves }: { cves: CveInfo[] }) {
               {c.kev && <span className="mono rounded border border-malicious px-1.5 text-[11px] leading-5 text-malicious">KEV</span>}
               {c.ransomware && <span className="mono rounded border border-suspicious px-1.5 text-[11px] leading-5 text-suspicious">Ransomware</span>}
               {c.epss !== null && c.epss !== undefined && (
-                <span className="mono ml-auto text-[11px] text-muted" title="Probability of exploitation in the next 30 days (EPSS)">
-                  EPSS {(c.epss * 100).toFixed(1)}%
+                <span className="mono ml-auto text-[11px] text-muted" title="Probability of exploitation in the next 30 days (EPSS), and how it ranks against all CVEs">
+                  {epssText(c.epss, c.percentile)}
                 </span>
               )}
             </div>
             {c.kev_name && <p className="feed-text mt-0.5 text-[11px] text-muted">{c.kev_name}</p>}
+            {c.kev_added && <p className="feed-text mono text-[11px] text-muted">Added to KEV {c.kev_added}</p>}
           </li>
         ))}
       </ul>
@@ -60,9 +62,13 @@ export function ReportActions({ report, onOpen, onOpenCase }: { report: Report; 
       void qc.invalidateQueries({ queryKey: ["history"] });
     },
   });
+  const [note, setNote] = useState("");
   const feedback = useMutation({
-    mutationFn: (label: FeedbackLabel) => api.feedback(report.id, label),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ["stats"] }),
+    mutationFn: (label: FeedbackLabel) => api.feedback(report.id, label, note.trim() || undefined),
+    onSuccess: () => {
+      setNote("");
+      void qc.invalidateQueries({ queryKey: ["stats"] });
+    },
   });
   const [caseId, setCaseId] = useState("");
   const cases = useQuery({ queryKey: ["cases"], queryFn: () => api.cases() });
@@ -76,14 +82,17 @@ export function ReportActions({ report, onOpen, onOpenCase }: { report: Report; 
     onSuccess: refreshCases,
   });
   const exp = useMutation({
-    mutationFn: async (kind: "md" | "html" | "misp") => ({
+    mutationFn: async (kind: "md" | "html" | "misp" | "json") => ({
       kind,
-      text: await api.download(kind === "misp" ? `/api/reports/${report.id}/misp` : `/api/reports/${report.id}/export?format=${kind}`),
+      // the report as the API serves it: without the vendor `raw` payloads (the Raw JSON tab has those)
+      text: await api.download(
+        kind === "misp" ? `/api/reports/${report.id}/misp` : kind === "json" ? `/api/reports/${report.id}` : `/api/reports/${report.id}/export?format=${kind}`,
+      ),
     }),
     onSuccess: ({ kind, text }) => {
       const ext = kind === "misp" ? "misp.json" : kind;
       const type = kind === "html" ? "text/html" : kind === "md" ? "text/markdown" : "application/json";
-      downloadText(`verdikt-${report.id}.${ext}`, text, type);
+      downloadText(`verdikt-${report.id}.${ext}`, kind === "json" ? JSON.stringify(JSON.parse(text), null, 2) : text, type);
     },
   });
   const stix = useMutation({
@@ -124,6 +133,17 @@ export function ReportActions({ report, onOpen, onOpenCase }: { report: Report; 
         )}
 
         <div className="flex flex-wrap items-center gap-2 border-t border-line px-4 py-3">
+          <label htmlFor="feedback-note" className="sr-only">
+            Feedback note (optional)
+          </label>
+          <input
+            id="feedback-note"
+            value={note}
+            maxLength={500}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Feedback note (optional)"
+            className={`${FIELD} h-7 w-full py-0 text-xs`}
+          />
           {FEEDBACK.map((f) => (
             <Button key={f.label} size="sm" disabled={feedback.isPending} onClick={() => feedback.mutate(f.label)}>
               {f.text}
@@ -134,6 +154,9 @@ export function ReportActions({ report, onOpen, onOpenCase }: { report: Report; 
           </Button>
           <Button size="sm" disabled={stix.isPending} onClick={() => stix.mutate()}>
             Export STIX
+          </Button>
+          <Button size="sm" disabled={exp.isPending} onClick={() => exp.mutate("json")}>
+            Export JSON
           </Button>
           <Button size="sm" disabled={exp.isPending} onClick={() => exp.mutate("misp")}>
             Export MISP

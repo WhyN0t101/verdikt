@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { defang, formatDuration, typeTag } from "../lib/format";
+import { ago, defang, formatDuration, typeTag } from "../lib/format";
 import { reasonToSource } from "../lib/provenance";
 import type { Report } from "../model";
 import { LEVEL_BG, LEVEL_BORDER, LevelBadge } from "./LevelBadge";
@@ -108,6 +108,7 @@ export function Diagnostics({ report }: { report: Report | null }) {
         ["Country", geo?.country ?? "-"],
         ["Evidence", `${report.confidence} confidence`],
         ["Lookup", formatDuration(report.duration_ms)],
+        ["Checked", ago(report.created_at)],
       ]
     : [];
   return (

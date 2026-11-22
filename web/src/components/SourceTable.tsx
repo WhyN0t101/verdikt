@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { metricValue } from "../lib/diffText";
 import { provenanceText, safeHref } from "../lib/provenance";
 import type { Report, SourceInfo, SourceResult } from "../model";
 import { LEVEL_BORDER, LevelBadge } from "./LevelBadge";
@@ -47,6 +48,18 @@ function Why({ r, focusKey }: { r: SourceResult; focusKey: number | null }) {
       <div className="mt-1 space-y-1 text-muted">
         <p>{ROLE_TEXT[r.role] ?? r.role}</p>
         <p className="mono">Weight in confidence: {r.weight}</p>
+        {Object.keys(r.metrics).length > 0 && (
+          <div>
+            <p>Values the rules read:</p>
+            <ul className="mono text-ink">
+              {Object.entries(r.metrics).map(([k, v]) => (
+                <li key={k}>
+                  {k}: {metricValue(v)}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
         {r.fired.length > 0 ? (
           <ul className="mono text-ink">
             {r.fired.map((f) => (
