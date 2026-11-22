@@ -1,7 +1,14 @@
-import { expect, test, type Page } from "@playwright/test";
+import { type APIRequestContext, expect, test, type Page } from "@playwright/test";
 
 const BAD_IP = "185.220.101.4";
 const GOOD_IP = "8.8.8.8";
+const FLIP = "9.9.9.9"; // the fake VirusTotal answers clean on the first lookup and malicious afterwards (scripts/e2e_server.py)
+
+// The backend is one in-memory server shared by every test, so a test that adds a watchlist entry
+// removes it again (through the API, so it also happens when an assertion failed first).
+async function unwatch(request: APIRequestContext, ioc: string) {
+  await request.delete(`/api/watchlist?ioc=${encodeURIComponent(ioc)}`, { headers: { "x-verdikt-token": "e2e-token" } });
+}
 
 async function check(page: Page, ioc: string) {
   const box = page.getByLabel("IP, domain, URL or hash");
@@ -41,6 +48,14 @@ test("empty state, then a malicious check shows verdict, sources and log", async
 
   await expect(page.getByRole("region", { name: "Source log" })).toContainText(/virustotal/i);
   await expect(page.getByRole("region", { name: "Diagnostics" })).toContainText("high confidence");
+
+  // provenance: each row says whether it is live, and a verdict reason opens and focuses its row
+  await expect(sources).toContainText("live, fetched");
+  const vt = sources.getByRole("row", { name: /virustotal/ });
+  await expect(vt.getByText("Weight in confidence")).toBeHidden(); // the row starts closed
+  await verdict.getByRole("button", { name: /^virustotal: malicious/ }).click();
+  await expect(vt.getByText("Weight in confidence")).toBeVisible();
+  await expect(vt.getByText("Why this counted")).toBeFocused();
 });
 
 test("a clean indicator is safe with evidence, and defanged input is accepted", async ({ page }) => {
@@ -79,6 +94,16 @@ test("a repeat check shows the earlier report under Seen before and opens it", a
   await expect(seen).toContainText("Seen before");
   await seen.getByRole("button", { name: /185/ }).first().click();
   await expect(page.getByRole("region", { name: "Verdict" })).toContainText(BAD_IP);
+});
+
+test("a repeated check shows a cached answer and the indicator history", async ({ page }) => {
+  await page.goto("/");
+  await check(page, BAD_IP);
+  await check(page, BAD_IP);
+  await expect(page.getByRole("region", { name: "Sources" })).toContainText("cached, fetched");
+  const story = page.getByRole("region", { name: "Indicator history" });
+  await expect(story).toContainText("This report");
+  await expect(story.getByRole("button", { name: /^Open the report from/ }).first()).toBeVisible();
 });
 
 test("keyboard: Ctrl+K focuses search, 3 opens Raw JSON, 1 returns to the map, Esc clears", async ({ page }) => {
@@ -337,4 +362,104 @@ test("import a MISP file as a local list and forget it again", async ({ page }) 
   await goto(page, "Overview");
   await feeds.getByRole("button", { name: "Forget imported list case-1" }).click();
   await expect(feeds).not.toContainText("import:case-1");
+});
+
+test("a verdict flip shows what changed and the indicator history", async ({ page, request }) => {
+  try {
+    await page.goto("/");
+    await check(page, FLIP); // first lookup: safe
+    await page.getByRole("button", { name: "Watch", exact: true }).click();
+    await expect(page.getByRole("button", { name: "Watching" })).toBeDisabled();
+
+    await goto(page, "Overview");
+    const watch = page.getByRole("region", { name: "Watchlist" });
+    await watch.getByRole("button", { name: "Re-check all" }).click(); // second lookup: malicious
+    await watch.getByRole("button", { name: `What changed for ${FLIP}` }).click({ timeout: 15_000 });
+
+    const changes = page.getByRole("region", { name: "Changes" });
+    await expect(changes).toContainText("Changes since");
+    await expect(changes).toContainText("Safe");
+    await expect(changes).toContainText("Malicious");
+    await expect(changes).toContainText("virustotal");
+
+    const story = page.getByRole("region", { name: "Indicator history" });
+    await expect(story).toContainText("This report");
+    await expect(story).toContainText("Watching since");
+    await expect(story).toContainText("1 verdict change");
+  } finally {
+    await unwatch(request, FLIP);
+  }
+});
+
+test("a repeat check of a clean indicator says nothing changed", async ({ page }) => {
+  await page.goto("/");
+  await check(page, GOOD_IP);
+  await check(page, GOOD_IP);
+  await expect(page.getByRole("region", { name: "Changes" })).toContainText("Nothing changed");
+});
+
+test("history search: filter, clear, literal percent sign, and shortcuts ignore the select", async ({ page }) => {
+  await page.goto("/");
+  await check(page, BAD_IP);
+  await check(page, GOOD_IP);
+  const history = page.getByRole("navigation", { name: "History" });
+
+  await page.getByLabel("Search history").fill("185.220");
+  await expect(history).not.toContainText(GOOD_IP);
+  await expect(history).toContainText(BAD_IP);
+  await page.getByRole("button", { name: "Clear" }).click();
+  await expect(history).toContainText(GOOD_IP);
+
+  const verdict = page.getByRole("combobox", { name: "Verdict" });
+  await verdict.selectOption("safe");
+  await expect(history).not.toContainText(BAD_IP);
+  await expect(history).toContainText(GOOD_IP);
+  await page.getByRole("button", { name: "Clear" }).click();
+
+  await page.getByLabel("Search history").fill("%"); // a literal percent sign, not "match anything"
+  await expect(page.getByText("No report matches.")).toBeVisible();
+  await page.getByRole("button", { name: "Clear" }).click();
+
+  await verdict.focus();
+  await page.keyboard.press("2"); // would open the Graph tab if the shortcut ignored selects
+  await expect(page.getByRole("tab", { name: /Map/ })).toHaveAttribute("aria-selected", "true");
+});
+
+test("batch triage: add results to a new case and to the watchlist", async ({ page, request }) => {
+  const iocs = [BAD_IP, GOOD_IP, "44d88612fea8a8f36de82e1278abb02f"];
+  try {
+    await page.goto("/");
+    await goto(page, "Batch");
+    const ticket = `Beacon from ${BAD_IP.replaceAll(".", "[.]")} to ${GOOD_IP}. Dropped file md5 ${iocs[2]}.`;
+    await page.getByLabel("Text containing indicators").fill(ticket);
+    await page.getByRole("button", { name: "Extract indicators" }).click();
+    const results = page.getByRole("region", { name: "Batch results" });
+    await expect(results).toContainText("3 indicators found");
+    await results.getByRole("button", { name: /Check all 3/ }).click();
+    await expect(results).toContainText("3 checked", { timeout: 15_000 });
+
+    const triage = page.getByRole("region", { name: "Triage actions" });
+    await expect(triage).toContainText("1 selected"); // default: malicious and suspicious, so only the beacon
+    await triage.getByLabel("Which results").selectOption("all");
+    await expect(triage).toContainText("3 selected");
+    await triage.getByLabel("Case to add to").selectOption("new");
+    await triage.getByRole("button", { name: "Add 3 to case" }).click();
+    await expect(triage).toContainText("3 added to the case");
+
+    // the watch step comes before leaving the page: the Batch table lives in this view's state
+    await triage.getByRole("button", { name: "Watch 3" }).click();
+    await expect(triage).toContainText("3 added.");
+    await expect(triage.getByRole("button", { name: "Watch 0" })).toBeDisabled();
+    await expect(triage).toContainText("3 already watched");
+
+    await goto(page, "Cases");
+    const made = page.getByRole("region", { name: "Cases", exact: true }).getByRole("button", { name: /^Batch triage, / }).first();
+    await expect(made).not.toContainText(BAD_IP); // the title carries no indicator
+    await made.click();
+    const detail = page.getByRole("region", { name: "Case detail" });
+    await expect(detail).toContainText(BAD_IP);
+    await expect(detail).toContainText(GOOD_IP);
+  } finally {
+    for (const ioc of iocs) await unwatch(request, ioc);
+  }
 });
