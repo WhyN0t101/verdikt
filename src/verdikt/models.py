@@ -129,6 +129,11 @@ class GeoPoint(Model):
     role: str = "ioc"  # "ioc" or "related"
     level: Level = Level.UNKNOWN
 
+    @field_validator("country", "city", "as_org")
+    @classmethod
+    def _clean_names(cls, v: str | None) -> str | None:
+        return None if v is None else clean_text(v)
+
 
 class GraphNode(Model):
     id: str
@@ -159,6 +164,11 @@ class CveInfo(Model):
     epss: float | None = None  # probability of exploitation in the next 30 days
     percentile: float | None = None
 
+    @field_validator("kev_name", "kev_added")
+    @classmethod
+    def _clean_kev(cls, v: str | None) -> str | None:
+        return None if v is None else clean_text(v)
+
 
 class SeenBefore(Model):
     """An earlier report that shares an indicator with this one."""
@@ -168,6 +178,12 @@ class SeenBefore(Model):
     level: Level
     created_at: datetime
     shared: list[str] = Field(default_factory=list[str])  # indicators in common
+
+    # index rows saved before cleaning existed are cleaned here, when a report is loaded
+    @field_validator("shared")
+    @classmethod
+    def _clean_shared(cls, v: list[str]) -> list[str]:
+        return [clean_text(x) for x in v]
 
 
 class Report(Model):

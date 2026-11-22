@@ -15,7 +15,7 @@ from typing import Any
 from verdikt.jsonutil import obj
 from verdikt.models import CveInfo
 
-_CVE = re.compile(r"^CVE-\d{4}-\d{4,}$")
+_CVE = re.compile(r"CVE-[0-9]{4}-[0-9]{4,}")  # [0-9]: `\d` also matches other scripts' digits
 MAX_CVES = 25
 
 
@@ -60,7 +60,7 @@ class CveStore:
     def lookup(self, cve_ids: list[str]) -> list[CveInfo]:
         """KEV entries first, then by EPSS, capped. Ids that are not CVE-shaped are ignored."""
         self._load_kev()
-        ids = sorted({c.upper() for c in cve_ids if _CVE.match(c.upper())})
+        ids = sorted({c.upper() for c in cve_ids if _CVE.fullmatch(c.upper())})
         scores = self._epss(ids)
         out: list[CveInfo] = []
         for cve in ids:

@@ -78,3 +78,15 @@ async def test_engine_without_vulns_has_no_cves(
         settings, Cache(":memory:"), client, sources, limiter_factory=CountingLimiter
     ).check("8.8.8.8")
     assert report.cves == []
+
+
+def test_only_plain_ascii_cve_ids_are_accepted(tmp_path: Path) -> None:
+    store = CveStore(tmp_path)
+    # a trailing newline (`$` would match it) and Arabic-Indic digits (`\d` would match them)
+    junk = [
+        "CVE-2021-1234\n",
+        "CVE-\u0662\u0660\u0662\u0661-1234",
+        "CVE-2021-\u0661\u0662\u0663\u0664",
+    ]
+    assert store.lookup(junk) == []
+    assert [c.id for c in store.lookup(["cve-2021-1234"])] == ["CVE-2021-1234"]

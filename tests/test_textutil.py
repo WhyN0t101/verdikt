@@ -8,7 +8,16 @@ import pytest
 
 from tests.conftest import Fake
 from verdikt.cache import Cache
-from verdikt.models import IOCType, RelatedIOC, SourceResult, Status
+from verdikt.models import (
+    CveInfo,
+    GeoPoint,
+    IOCType,
+    Level,
+    RelatedIOC,
+    SeenBefore,
+    SourceResult,
+    Status,
+)
 from verdikt.textutil import clean_text
 
 ESC, BEL = "\x1b", "\x07"
@@ -75,3 +84,30 @@ def test_a_cache_hit_keeps_the_original_fetch_time() -> None:
     assert got is not None
     assert (got.cached, got.fetched_at) == (True, fetched)  # the UI shows "cached, 5 h ago"
     cache.close()
+
+
+def test_kev_geo_and_shared_indicators_are_cleaned_too() -> None:
+    cve = CveInfo(
+        id="CVE-2021-1234", kev_name="Evil\u202e \x1b[31mName", kev_added="2021\u200b-01-01"
+    )
+    assert (cve.kev_name, cve.kev_added) == ("Evil [31mName", "2021-01-01")
+    geo = GeoPoint(
+        ip="1.2.3.4", lat=0, lon=0, country="N\u202el", city="C\x1bity", as_org="Org\u2028"
+    )
+    assert (geo.country, geo.city, geo.as_org) == ("Nl", "City", "Org")
+    seen = SeenBefore(
+        report_id="r",
+        ioc="1.2.3.4",
+        level=Level.SAFE,
+        created_at=datetime.now(UTC),
+        shared=["a\u202e.com", "b\x1b"],
+    )
+    assert seen.shared == ["a.com", "b"]
+
+
+def test_old_index_rows_are_cleaned_when_a_report_is_loaded() -> None:
+    body = SeenBefore(
+        report_id="r", ioc="1.2.3.4", level=Level.SAFE, created_at=datetime.now(UTC)
+    ).model_dump_json()
+    poisoned = body.replace('"shared":[]', '"shared":["x\\u202ey"]')
+    assert SeenBefore.model_validate_json(poisoned).shared == ["xy"]
