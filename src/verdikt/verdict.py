@@ -169,4 +169,8 @@ def decide(results: list[SourceResult], rules: Rules) -> Decision:
         r.role = _role(r, rules)
     agreeing = sum(1 for r in verdict_rows if r.level is final)
     confidence = _confidence(verdict_rows, final, rules)
+    if rules.cap_safe_confidence_single_strong and final is Level.SAFE:
+        answered = [r for r in verdict_rows if r.source in rules.high_weight]
+        if sum(r.source not in rules.listing_feeds for r in answered) == 1:
+            confidence = min(confidence, Confidence.MEDIUM, key=list(Confidence).index)
     return Decision(final, agreeing, len(verdict_rows), confidence, reasons, rows)

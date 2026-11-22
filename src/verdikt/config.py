@@ -42,6 +42,8 @@ class Rules(BaseModel):
     default_weight: int = 1
     confidence_high: int = 5
     confidence_medium: int = 3
+    # experiment, off: a SAFE that rests on one strong source (VirusTotal) is at most medium
+    cap_safe_confidence_single_strong: bool = False
 
     @model_validator(mode="after")
     def _check_names_and_bands(self) -> Rules:

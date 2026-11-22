@@ -134,3 +134,47 @@ def test_every_metric_in_rules_yaml_is_one_a_source_produces() -> None:
                 if metric not in made.get(source, set()):
                     problems.append(f"{section}: {source}.{key}")
     assert not problems, problems
+
+
+# --- the opt-in cap on SAFE confidence (an experiment, off by default) ----------------------
+
+
+def _safe_pair_with_one_strong_source(rules: Rules):
+    from verdikt.models import SourceResult, Status
+    from verdikt.verdict import decide
+
+    rows = [
+        SourceResult(source="virustotal", status=Status.OK, metrics={"malicious": 0}),
+        SourceResult(source="abuseipdb", status=Status.OK, metrics={"score": 0}),
+    ]
+    return decide(rows, rules)
+
+
+def test_safe_confidence_is_unchanged_by_default() -> None:
+    d = _safe_pair_with_one_strong_source(load_rules())
+    assert (d.level.value, d.confidence.value) == ("safe", "high")  # the behaviour the gate pins
+
+
+def test_the_cap_limits_safe_confidence_when_one_strong_source_carries_it() -> None:
+    capped = Rules.model_validate({**shipped(), "cap_safe_confidence_single_strong": True})
+    d = _safe_pair_with_one_strong_source(capped)
+    assert (d.level.value, d.confidence.value) == ("safe", "medium")
+
+
+def test_the_cap_never_touches_other_verdicts_or_a_second_strong_source() -> None:
+    from verdikt.models import SourceResult, Status
+    from verdikt.verdict import decide
+
+    capped = Rules.model_validate({**shipped(), "cap_safe_confidence_single_strong": True})
+    hit = [SourceResult(source="virustotal", status=Status.OK, metrics={"malicious": 30})]
+    assert decide(hit, capped).confidence == decide(hit, load_rules()).confidence
+    # with a second strong source (here ThreatFox no longer a listing-only feed) the cap steps aside
+    shipped_data = shipped()
+    shipped_data["listing_feeds"] = [f for f in shipped_data["listing_feeds"] if f != "threatfox"]
+    two = Rules.model_validate({**shipped_data, "cap_safe_confidence_single_strong": True})
+    rows = [
+        SourceResult(source="virustotal", status=Status.OK, metrics={"malicious": 0}),
+        SourceResult(source="abuseipdb", status=Status.OK, metrics={"score": 0}),
+        SourceResult(source="threatfox", status=Status.OK, metrics={"match": False}),
+    ]
+    assert decide(rows, two).confidence.value == "high"
