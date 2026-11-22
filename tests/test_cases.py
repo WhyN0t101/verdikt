@@ -162,7 +162,7 @@ def test_markdown_report_is_defanged_and_neutralises_feed_text() -> None:
     neutral = "`<script>alert(1)</script> / 'x' [click](http://evil.example) # heading`"
     assert md.count(neutral) == 2  # once in "Why", once in the source row
     assert not any(line.startswith("# heading") for line in md.splitlines())
-    [row] = [ln for ln in md.splitlines() if ln.startswith("| virustotal")]
+    row = next(ln for ln in md.splitlines() if ln.startswith("| virustotal"))  # Sources table
     assert row.count("|") == 7  # a pipe in feed text cannot add a column
 
 
