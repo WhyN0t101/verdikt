@@ -8,6 +8,7 @@ no external resource.
 from __future__ import annotations
 
 import html
+from datetime import UTC
 
 from verdikt.cache import CaseDetail
 from verdikt.models import Report, SourceResult
@@ -26,6 +27,28 @@ def _when(report: Report) -> str:
 
 def _results_rows(report: Report) -> list[SourceResult]:
     return sorted(report.results, key=lambda r: r.source)
+
+
+def _evidence(r: SourceResult) -> list[str]:
+    """Where one claim came from: status, level, when it was fetched, live or cached, the page.
+
+    The link is defanged text, never a live link, and `raw` is not part of an export.
+    """
+    level = r.level.value if r.status.value == "ok" else "-"
+    fetched = r.fetched_at.astimezone(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+    link = defang(str(r.link)) if r.link else ""
+    return [
+        r.source,
+        r.status.value,
+        level,
+        fetched,
+        "yes" if r.cached else "no",
+        link,
+        "; ".join(r.fired),
+    ]
+
+
+_EVIDENCE_HEAD = ["Source", "Status", "Level", "Fetched", "Cached", "Page", "Rules that fired"]
 
 
 # --- Markdown ----------------------------------------------------------------------------
@@ -55,6 +78,16 @@ def report_markdown(report: Report, heading: int = 1) -> str:
             f"| {r.source} | {level} | {r.role} | {r.weight} | {_code(r.summary)} | "
             f"{_code('; '.join(r.fired))} |"
         )
+    lines += [
+        "",
+        f"{h}# Evidence",
+        "",
+        "| " + " | ".join(_EVIDENCE_HEAD) + " |",
+        "|" + "---|" * len(_EVIDENCE_HEAD),
+    ]
+    for r in _results_rows(report):
+        cells = _evidence(r)
+        lines.append("| " + " | ".join([cells[0], *(_code(c) or "-" for c in cells[1:])]) + " |")
     if report.cves:
         lines += ["", f"{h}# Vulnerabilities on the host", ""]
         for c in report.cves:
@@ -144,6 +177,13 @@ def _report_html(report: Report, tag: str = "h1") -> str:
             f"<tr><td>{_e(r.source)}</td><td>{_e(level)}</td><td>{_e(r.role)}</td><td>{r.weight}</td>"
             f'<td class="mono">{_e(r.summary)}</td><td class="mono">{_e("; ".join(r.fired))}</td></tr>'
         )
+    out.append("</table>")
+    out.append(
+        "<h3>Evidence</h3><table><tr>" + "".join(f"<th>{h}</th>" for h in _EVIDENCE_HEAD) + "</tr>"
+    )
+    for r in _results_rows(report):
+        cells = "".join(f'<td class="mono">{_e(c)}</td>' for c in _evidence(r))
+        out.append(f"<tr>{cells}</tr>")
     out.append("</table>")
     if report.cves:
         out.append("<h3>Vulnerabilities on the host</h3><ul>")
