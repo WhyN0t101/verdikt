@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { defang, formatDuration, typeTag } from "../lib/format";
+import { reasonToSource } from "../lib/provenance";
 import type { Report } from "../model";
 import { LEVEL_BG, LEVEL_BORDER, LevelBadge } from "./LevelBadge";
 import { Button, Chip, SectionTitle } from "./ui";
@@ -42,7 +43,17 @@ function Confidence({ report }: { report: Report }) {
 }
 
 /** Verdict overlay on the viewport: the answer in display type, the evidence one glance below. */
-export function VerdictHud({ report, onRecheck, busy }: { report: Report; onRecheck: () => void; busy: boolean }) {
+export function VerdictHud({
+  report,
+  onRecheck,
+  busy,
+  onShowSource,
+}: {
+  report: Report;
+  onRecheck: () => void;
+  busy: boolean;
+  onShowSource: (source: string) => void;
+}) {
   return (
     <section aria-label="Verdict" className={`hud verdict-in w-full max-w-md border-l-4 p-5 ${LEVEL_BORDER[report.level]}`}>
       <LevelBadge level={report.level} size="xl" />
@@ -55,11 +66,25 @@ export function VerdictHud({ report, onRecheck, busy }: { report: Report; onRech
       </div>
       {report.reasons.length > 0 && (
         <ul className="mt-4 space-y-1 border-t border-line pt-3">
-          {report.reasons.map((r, i) => (
-            <li key={i} className="text-sm text-muted">
-              {r}
-            </li>
-          ))}
+          {report.reasons.map((r, i) => {
+            const source = reasonToSource(r, report.results);
+            return (
+              <li key={i} className="text-sm text-muted">
+                {source ? (
+                  <button
+                    type="button"
+                    onClick={() => onShowSource(source)}
+                    title={`Show the ${source} row below`}
+                    className="text-left underline-offset-2 hover:text-ink hover:underline"
+                  >
+                    {r}
+                  </button>
+                ) : (
+                  r
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
       <div className="mt-4 flex flex-wrap gap-2">

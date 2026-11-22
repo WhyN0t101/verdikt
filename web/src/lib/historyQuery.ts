@@ -3,7 +3,6 @@ import { toCsv } from "./csv";
 
 export const PAGE_SIZE = 50;
 export const Q_MAX = 200; // the API rejects a longer search text
-export const IOC_TYPES: IOCType[] = ["ip", "domain", "url", "md5", "sha1", "sha256"];
 
 export interface HistoryFilter {
   q: string;

@@ -42,6 +42,7 @@ const TYPE_TAG: Record<IOCType, string> = {
   sha256: "SHA256",
 };
 export const typeTag = (t: IOCType): string => TYPE_TAG[t];
+export const IOC_TYPES = Object.keys(TYPE_TAG) as IOCType[];
 
 /** Relative age for lists, e.g. `5 min ago`, `3 h ago`, `2 d ago`. */
 export function ago(iso: string, now: number = Date.now()): string {

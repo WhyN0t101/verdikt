@@ -1,3 +1,5 @@
+import { useEffect, useRef } from "react";
+import { provenanceText, safeHref } from "../lib/provenance";
 import type { Report, SourceInfo, SourceResult } from "../model";
 import { LEVEL_BORDER, LevelBadge } from "./LevelBadge";
 
@@ -5,6 +7,8 @@ interface Props {
   report: Report | null;
   /** enabled sources, shown as skeleton rows while a check is running */
   pending: SourceInfo[] | null;
+  /** a verdict reason asked for this row: open its "Why this counted" and move focus there */
+  focus?: { name: string; n: number } | null;
 }
 
 function Skeleton({ name }: { name: string }) {
@@ -27,10 +31,18 @@ const ROLE_TEXT: Record<string, string> = {
 };
 
 /** Why this row counted the way it did: its role, weight, and the rules that matched. */
-function Why({ r }: { r: SourceResult }) {
+function Why({ r, focusKey }: { r: SourceResult; focusKey: number | null }) {
+  const ref = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const d = ref.current;
+    if (focusKey === null || !d) return;
+    d.open = true;
+    d.querySelector("summary")?.focus();
+    d.scrollIntoView({ block: "nearest" }); // no smooth scrolling, so reduced motion is respected
+  }, [focusKey]);
   if (!r.role) return null;
   return (
-    <details className="mt-1 text-xs">
+    <details ref={ref} className="mt-1 text-xs">
       <summary className="cursor-pointer text-muted hover:text-ink">Why this counted</summary>
       <div className="mt-1 space-y-1 text-muted">
         <p>{ROLE_TEXT[r.role] ?? r.role}</p>
@@ -49,7 +61,7 @@ function Why({ r }: { r: SourceResult }) {
   );
 }
 
-export function SourceTable({ report, pending }: Props) {
+export function SourceTable({ report, pending, focus = null }: Props) {
   return (
     <section aria-label="Sources" className="overflow-auto bg-panel">
       <table className="w-full min-w-[520px] text-left text-sm">
@@ -82,18 +94,19 @@ export function SourceTable({ report, pending }: Props) {
                     {r.tags.length > 0 && (
                       <span className="mt-1 flex flex-wrap gap-1">
                         {r.tags.map((t) => (
-                          <span key={t} className="label rounded border border-line px-1 normal-case">
+                          <span key={t} className="label feed-text rounded border border-line px-1 normal-case">
                             {t}
                           </span>
                         ))}
                       </span>
                     )}
-                    <Why r={r} />
+                    <p className="mono mt-1 text-xs text-muted">{provenanceText(r)}</p>
+                    <Why r={r} focusKey={focus?.name === r.source ? focus.n : null} />
                   </td>
                   <td className="px-3 py-2 text-right">
-                    {r.link && (
+                    {safeHref(r.link) && (
                       <a
-                        href={r.link}
+                        href={safeHref(r.link) ?? undefined}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-accent-text underline-offset-2 hover:underline"

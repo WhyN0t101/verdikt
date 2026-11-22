@@ -5,6 +5,7 @@ import { downloadText } from "../lib/csv";
 import { defang, shortenMiddle } from "../lib/format";
 import type { CveInfo, FeedbackLabel, Report } from "../model";
 import { LEVEL_BG } from "./LevelBadge";
+import { IocHistory } from "./IocHistory";
 import { ReportDiff } from "./ReportDiff";
 import { Button, FIELD, SectionTitle } from "./ui";
 
@@ -48,18 +49,27 @@ function Vulnerabilities({ cves }: { cves: CveInfo[] }) {
 }
 
 /** CVEs, earlier reports sharing an indicator, feedback, watchlist and STIX export for one report. */
-export function ReportActions({ report, onOpen }: { report: Report; onOpen: (id: string) => void }) {
+export function ReportActions({ report, onOpen, onOpenCase }: { report: Report; onOpen: (id: string) => void; onOpenCase: (id: string) => void }) {
   const qc = useQueryClient();
   const watch = useQuery({ queryKey: ["watchlist"], queryFn: api.watchlist });
   const watching = watch.data?.entries.some((e) => e.ioc === report.ioc) ?? false;
-  const watchAdd = useMutation({ mutationFn: () => api.watchAdd(report.id), onSuccess: (s) => qc.setQueryData(["watchlist"], s) });
+  const watchAdd = useMutation({
+    mutationFn: () => api.watchAdd(report.id),
+    onSuccess: (s) => {
+      qc.setQueryData(["watchlist"], s);
+      void qc.invalidateQueries({ queryKey: ["history"] });
+    },
+  });
   const feedback = useMutation({
     mutationFn: (label: FeedbackLabel) => api.feedback(report.id, label),
     onSuccess: () => void qc.invalidateQueries({ queryKey: ["stats"] }),
   });
   const [caseId, setCaseId] = useState("");
   const cases = useQuery({ queryKey: ["cases"], queryFn: () => api.cases() });
-  const refreshCases = () => void qc.invalidateQueries({ queryKey: ["cases"] });
+  const refreshCases = () => {
+    void qc.invalidateQueries({ queryKey: ["cases"] });
+    void qc.invalidateQueries({ queryKey: ["history"] });
+  };
   const addToCase = useMutation({ mutationFn: (id: string) => api.caseAdd(id, report.id), onSuccess: refreshCases });
   const newCase = useMutation({
     mutationFn: async () => api.caseAdd((await api.caseCreate(`Investigation: ${defang(report.ioc)}`)).id, report.id),
@@ -84,6 +94,7 @@ export function ReportActions({ report, onOpen }: { report: Report; onOpen: (id:
   return (
     <>
       <ReportDiff key={report.id} reportId={report.id} />
+      <IocHistory key={`h-${report.id}`} reportId={report.id} onOpen={onOpen} onOpenCase={onOpenCase} />
       <Vulnerabilities cves={report.cves} />
       <section aria-label="Report actions" className="border-b border-line">
         <SectionTitle>Seen before</SectionTitle>
