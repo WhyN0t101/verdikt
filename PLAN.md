@@ -249,8 +249,8 @@ class Source(Protocol):
 2. Classify: `ipaddress` → IP; hex length 32/40/64 → MD5/SHA1/SHA256; contains scheme → URL; else domain regex.
 3. Normalize: lowercase domains and hashes, IDNA encode, strip trailing dot, canonical URL.
 4. Reject internal targets with a clear message, for every IOC type:
-   - IPs, and IP-literal hosts inside URLs, where `not ip.is_global`.
-   - Hostnames (domain IOCs and URL hosts) that are `localhost`, single-label (`intranet`), or end in `.local`, `.internal`, `.lan`, `.corp`, `.home.arpa`, `.intranet`, `.private`, `.home` or `.localdomain`; and NAT64 addresses (`64:ff9b::/96`) that wrap a private IPv4.
+   - IPs, and IP-literal hosts inside URLs, where `not ip.is_global`; and IPv6 addresses that carry an IPv4 address (mapped `::ffff:a.b.c.d`, NAT64 `64:ff9b::/96`, 6to4 `2002::/16`, Teredo, IPv4-compatible `::/96`, IPv4-translated `::ffff:0:0:0/96`) whose embedded IPv4 is not global, and the deprecated site-local `fec0::/10`. One helper (`detect.is_public_ip`) decides; the engine and the DNS step use it too.
+   - Hostnames (domain IOCs and URL hosts) that are `localhost`, single-label (`intranet`), or end in `.local`, `.internal`, `.lan`, `.corp`, `.home.arpa`, `.intranet`, `.private`, `.home` or `.localdomain`.
    - Hostnames ending in any suffix from the `VERDIKT_INTERNAL_DOMAINS` setting (your company domains).
 5. Unknown input exits with code 1 (the §10 "any error" code; 4 is not used) and a message. No API call is made.
 6. Domains whose last label is all digits or `0x` hex (`127.1`, `0x7f.0.0.1`) are rejected: browsers read them as IPs, so they are not public names.
@@ -594,7 +594,7 @@ Not built: a urlscan per-result verdict source (result pages are 13 to 40 MB eac
 | Watch | Re-checks run 4 at a time; a lookup that ended UNKNOWN because a source errored or was rate limited is not a verdict change | `POST /api/scheduler/{name}/start` runs a job in the background; `GET /api/scheduler` shows `running` and `progress` ("3/50") |
 | Scheduler | One lock per job (no double runs); `last_run` persists in the new `kv` table, so a restart keeps the cadence | An overdue job waits a full interval: starting the UI never spends quota |
 | Notify | Discord, Teams and email (stdlib `smtplib`); `VERDIKT_NOTIFY_COOLDOWN_HOURS`; `VERDIKT_WATCH_NOTIFY_ANY` | Discord sends `allowed_mentions: {parse: []}`; every dot of feed text is defanged; Slack markup characters in feed text are stripped |
-| Detect | NAT64 wrapping a private IPv4 is refused; `.intranet .private .home .localdomain` are internal; `fullmatch` for every anchored pattern | |
+| Detect | NAT64 wrapping a private IPv4 is refused (round 6: so is every other IPv6 form that hides a non-global IPv4, and `fec0::/10`); `.intranet .private .home .localdomain` are internal; `fullmatch` for every anchored pattern | |
 | Imports | Parsing runs in a thread; the 100k cap applies before `detect()`; `RecursionError` is an import error | |
 | Misc | `verdikt doctor`; audit log rotates at 10 MB to `.1`; locally matched sources (ttl 0) skip the cache write; unique temp names for feed writes; shared quota groups show the group's spend | |
 
