@@ -40,7 +40,7 @@ function Vulnerabilities({ cves }: { cves: CveInfo[] }) {
                 </span>
               )}
             </div>
-            {c.kev_name && <p className="mt-0.5 text-[11px] text-muted">{c.kev_name}</p>}
+            {c.kev_name && <p className="feed-text mt-0.5 text-[11px] text-muted">{c.kev_name}</p>}
           </li>
         ))}
       </ul>

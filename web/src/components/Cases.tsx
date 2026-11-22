@@ -226,7 +226,7 @@ export function Cases({ onOpen, initialId = null }: { onOpen: (reportId: string)
                 aria-current={selected === c.id ? "true" : undefined}
                 className={`block w-full px-4 py-2 text-left hover:bg-panel2 ${selected === c.id ? "bg-panel2" : ""}`}
               >
-                <span className="block truncate text-sm">{c.title}</span>
+                <span className="feed-text block truncate text-sm">{c.title}</span>
                 <span className="label block">
                   {c.report_count} report{c.report_count === 1 ? "" : "s"} · {ago(c.updated_at)}
                   {c.tags.length > 0 && ` · ${c.tags.join(", ")}`}

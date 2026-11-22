@@ -98,7 +98,7 @@ export function IocHistory({ reportId, onOpen, onOpenCase }: Props) {
         )}
 
         <p className="text-xs text-muted">
-          Matches this exact indicator. A URL and its host are separate indicators. Reports older than 90 days are removed unless they are in a case.
+          Matches this exact indicator. A URL and its host are separate indicators. Old reports are removed after the retention period (default 90 days) unless they are in a case.
         </p>
       </div>
     </section>
