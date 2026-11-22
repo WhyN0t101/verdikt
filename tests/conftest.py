@@ -62,19 +62,21 @@ class Fake(BaseSource):
         metrics: dict[str, int | bool] | None = None,
         status: Status = Status.OK,
         raises: bool = False,
+        summary: str = "fake",
     ) -> None:
         super().__init__("key")
         self.name = name
         self.metrics = metrics or {}
         self._status = status
         self._raises = raises
+        self._summary = summary
         self.calls = 0
 
     async def lookup(self, ioc: IOC, http: Gate) -> SourceResult:
         self.calls += 1
         if self._raises:
             raise RuntimeError("boom")
-        return self.result(self._status, "fake", metrics=self.metrics, raw={"fake": True})
+        return self.result(self._status, self._summary, metrics=self.metrics, raw={"fake": True})
 
     async def query(self, ioc: IOC, http: Gate) -> SourceResult:
         # raise through on purpose: the engine must survive a misbehaving source

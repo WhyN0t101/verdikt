@@ -35,6 +35,7 @@ from verdikt.diff import ReportDiff, diff_reports
 from verdikt.engine import Engine, SourceInfo, build_engine
 from verdikt.export import case_html, case_markdown, report_html, report_markdown
 from verdikt.extract import Extraction, extract_iocs
+from verdikt.history import MAX_REPORTS, IocHistory, build_history
 from verdikt.misp import to_misp
 from verdikt.models import IOCType, Level, Model, Report
 from verdikt.scheduler import JOBS, JobStatus, Scheduler
@@ -245,7 +246,9 @@ def create_app(
 
     @app.get("/api/reports/{report_id}/diff", response_model=ReportDiff)
     async def report_diff(
-        report_id: str, engine: EngineDep, against: str | None = None
+        report_id: str,
+        engine: EngineDep,
+        against: Annotated[str | None, Query(max_length=64)] = None,
     ) -> ReportDiff:
         found = engine.cache.get_report(report_id)
         if found is None:
@@ -256,6 +259,24 @@ def create_app(
         if earlier is None:
             raise HTTPException(status_code=404, detail="report not found")
         return diff_reports(earlier, found)
+
+    @app.get("/api/reports/{report_id}/history", response_model=IocHistory)
+    async def report_history(report_id: str, engine: EngineDep) -> IocHistory:
+        found = engine.cache.get_report(report_id)
+        if found is None:
+            raise HTTPException(status_code=404, detail="report not found")
+        cache = engine.cache
+        reports = cache.reports_for_ioc(
+            found.ioc, MAX_REPORTS + 1
+        )  # one extra: the truncation probe
+        return build_history(
+            report_id,
+            found.ioc,
+            reports,
+            cache.cases_for_reports([r.id for r in reports[:MAX_REPORTS]]),
+            cache.watch_entry(found.ioc),
+            cache.watch_events_for(found.ioc),
+        )
 
     @app.get("/api/reports/{report_id}/stix")
     async def report_stix(report_id: str, engine: EngineDep) -> JSONResponse:

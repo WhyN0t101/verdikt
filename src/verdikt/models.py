@@ -6,7 +6,9 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, field_validator
+
+from verdikt.textutil import clean_text
 
 SCHEMA_VERSION = 4  # 2: confidence, seen_before. 3: cves. 4: SourceResult fired/weight/role
 
@@ -79,6 +81,11 @@ class RelatedIOC(Model):
     relation: str  # resolves_to, hosted_on, drops, contacts, belongs_to
     inbound: bool = False  # True: edge points related -> ioc instead of ioc -> related
 
+    @field_validator("value")
+    @classmethod
+    def _clean_value(cls, v: str) -> str:
+        return clean_text(v)
+
 
 class SourceResult(Model):
     source: str
@@ -97,7 +104,18 @@ class SourceResult(Model):
     weight: int = 0  # evidence weight in the confidence score (0 = none)
     role: str = ""  # strong | weak | feed | context | no answer
     fetched_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-    raw: dict[str, Any] | None = None  # arbitrary vendor JSON
+    raw: dict[str, Any] | None = None  # arbitrary vendor JSON, kept as received
+
+    # also runs when a stored row or a cached answer is loaded, so old rows come back clean
+    @field_validator("summary")
+    @classmethod
+    def _clean_summary(cls, v: str) -> str:
+        return clean_text(v)
+
+    @field_validator("tags")
+    @classmethod
+    def _clean_tags(cls, v: list[str]) -> list[str]:
+        return [clean_text(t) for t in v]
 
 
 class GeoPoint(Model):

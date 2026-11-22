@@ -405,17 +405,34 @@ class Cache:
             for r in rows
         ]
 
+    def reports_for_ioc(self, ioc: str, limit: int) -> list[ReportSummary]:
+        """Reports of exactly this indicator, newest first."""
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id, ioc, ioc_type, level, created_at FROM reports WHERE ioc=? "
+                "ORDER BY created_at DESC, id DESC LIMIT ?",
+                (ioc, limit),
+            ).fetchall()
+        return [
+            ReportSummary(id=r[0], ioc=r[1], ioc_type=r[2], level=r[3], created_at=r[4])
+            for r in rows
+        ]
+
     def previous_report(self, report: Report) -> Report | None:
-        """The newest report of the same indicator saved before `report` (None for the first)."""
+        """The newest readable report of the same indicator saved before `report`.
+
+        None for the first one. A body written by an older schema is skipped, so one unreadable
+        row does not hide the older reports behind it (shortcut: only the 5 newest are tried).
+        """
         stamp = report.created_at.isoformat()
         with self._lock:
-            row = self._db.execute(
+            rows = self._db.execute(
                 "SELECT id FROM reports WHERE ioc=? AND id != ? "
                 "AND (created_at < ? OR (created_at = ? AND id < ?)) "
-                "ORDER BY created_at DESC, id DESC LIMIT 1",
+                "ORDER BY created_at DESC, id DESC LIMIT 5",
                 (report.ioc, report.id, stamp, stamp, report.id),
-            ).fetchone()
-        return self.get_report(row[0]) if row else None
+            ).fetchall()
+        return next((r for row in rows if (r := self.get_report(row[0]))), None)
 
     def checked_since(self, age: timedelta) -> set[str]:
         """IOCs that have a stored report newer than `age` (for `bulk --resume`)."""
@@ -526,6 +543,17 @@ class Cache:
             for r in rows
         ]
         return [c for c in cases if tag in c.tags] if tag else cases
+
+    def cases_for_reports(self, report_ids: list[str]) -> list[CaseSummary]:
+        """Cases that hold any of these reports, each once."""
+        if not report_ids:
+            return []
+        marks = ",".join("?" * len(report_ids))
+        # `marks` is only "?" placeholders; the ids are bound
+        sql = f"SELECT DISTINCT case_id FROM case_reports WHERE report_id IN ({marks})"  # noqa: S608
+        with self._lock:
+            wanted = {r[0] for r in self._db.execute(sql, report_ids).fetchall()}
+        return [c for c in self.case_list() if c.id in wanted]
 
     def case_get(self, case_id: str) -> CaseDetail | None:
         with self._lock:
@@ -690,6 +718,21 @@ class Cache:
                 )
                 return previous
             return None
+
+    def watch_entry(self, ioc: str) -> WatchEntry | None:
+        return next((e for e in self.watch_list() if e.ioc == ioc), None)
+
+    def watch_events_for(self, ioc: str, limit: int = 20) -> list[WatchEvent]:
+        with self._lock:
+            rows = self._db.execute(
+                "SELECT id, ioc, from_level, to_level, at, report_id FROM watch_events "
+                "WHERE ioc=? ORDER BY id DESC LIMIT ?",
+                (ioc, limit),
+            ).fetchall()
+        return [
+            WatchEvent.model_validate(dict(zip(WatchEvent.model_fields, r, strict=True)))
+            for r in rows
+        ]
 
     def watch_events(self, limit: int = 20) -> list[WatchEvent]:
         with self._lock:

@@ -445,3 +445,21 @@ async def test_watch_state_tells_the_cap(env: Env) -> None:
     client, _ = env
     body = (await client.get("/api/watchlist", headers=AUTH)).json()
     assert body["max_entries"] == WATCHLIST_MAX
+
+
+async def test_an_unreadable_newest_earlier_report_is_skipped(env: Env) -> None:
+    client, cache = env
+    cache.save_report(rep("old", minutes=0, level=Level.SAFE))
+    cache.save_report(rep("bad", minutes=5))
+    cache.save_report(rep("new", minutes=10, level=Level.MALICIOUS))
+    with cache._lock, cache._db:  # pyright: ignore[reportPrivateUsage]
+        cache._db.execute("UPDATE reports SET body='{}' WHERE id='bad'")  # pyright: ignore[reportPrivateUsage]
+    body = (await client.get("/api/reports/new/diff", headers=AUTH)).json()
+    assert body["previous_id"] == "old"
+
+
+async def test_against_is_length_limited(env: Env) -> None:
+    client, cache = env
+    cache.save_report(rep("a"))
+    r = await client.get(f"/api/reports/a/diff?against={'x' * 65}", headers=AUTH)
+    assert r.status_code == 422

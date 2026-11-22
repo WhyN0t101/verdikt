@@ -17,6 +17,8 @@ from verdikt.models import SCHEMA_VERSION, Status
 from verdikt.sources.base import Source
 
 runner = CliRunner()
+# terminal escapes, bidi override, zero-width, BOM, word joiner, soft hyphen, line separator, tags
+POISON = "bad\x1b[31mRED\x1b]0;pwned\x07 \u202eevil\u200b\ufeff\u2060\u00ad\u2028\U000e0041ok"
 UseProfile = Callable[[str | dict[str, str]], None]
 
 PROFILES: dict[str, list[Fake]] = {
@@ -29,6 +31,7 @@ PROFILES: dict[str, list[Fake]] = {
     "unknown": [Fake("abuseipdb", {"score": 0})],
     "error": [Fake("virustotal", status=Status.ERROR)],
     "empty": [],
+    "poisoned": [Fake("virustotal", {"malicious": 20}, summary=POISON)],
 }
 
 
@@ -253,3 +256,14 @@ def test_doctor_lists_sources_and_paths(use_profile: UseProfile) -> None:
     assert result.exit_code == 0, result.output
     assert "geoip" in result.output
     assert "notify" in result.output and "db " in result.output
+
+
+@pytest.mark.parametrize("args", [["check", "8.8.8.8"], ["check", "8.8.8.8", "--json"]])
+def test_check_output_has_no_terminal_escapes_or_invisible_characters(
+    use_profile: UseProfile, args: list[str]
+) -> None:
+    use_profile("poisoned")
+    out = runner.invoke(cli.app, args).output
+    assert "\x1b" not in out
+    assert not any(ch in out for ch in "\u202e\u200b\ufeff\u2060\u00ad\u2028\U000e0041\x07")
+    assert "evil" in out  # the visible text survives

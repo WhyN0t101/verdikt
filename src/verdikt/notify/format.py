@@ -6,6 +6,7 @@ import html
 from collections.abc import Callable
 
 from verdikt.models import Level, Report, SourceResult, Status
+from verdikt.textutil import clean_text
 
 EMOJI = {
     Level.MALICIOUS: "🔴",
@@ -34,7 +35,7 @@ def _feed_text(text: str) -> str:
     Every dot is defanged: a heuristic for "link-like" tokens misses IPv6, Unicode hosts and
     odd spellings, and a missed token becomes a live link.
     """
-    return defang(" ".join(text.split()))
+    return defang(clean_text(text))
 
 
 def _plain_escape(text: str) -> str:

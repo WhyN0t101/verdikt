@@ -7,23 +7,20 @@ cannot reorder what the analyst reads.
 
 from __future__ import annotations
 
-import re
 from datetime import datetime
 from typing import Literal
 
 from pydantic import Field
 
 from verdikt.models import Level, Model, Report, SourceResult, Status
+from verdikt.textutil import clean_text
 
 MAX_TEXT = 300
-# C0/C1 controls, then bidi controls (embeddings, overrides, isolates, marks)
-_DROP = re.compile("[\x00-\x08\x0b-\x1f\x7f-\x9f؜‎‏‪-‮⁦-⁩]")
-_SPACE = re.compile("[\t\n\r]")
 _ANSWERED = (Status.OK, Status.NOT_FOUND)
 
 
 def clean(text: str) -> str:
-    return _DROP.sub("", _SPACE.sub(" ", text))[:MAX_TEXT]
+    return clean_text(text)[:MAX_TEXT]
 
 
 class MetricChange(Model):
