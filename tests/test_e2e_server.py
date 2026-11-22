@@ -26,7 +26,7 @@ def load() -> ModuleType:
     return module
 
 
-async def test_flip_is_safe_first_and_malicious_after() -> None:
+async def test_each_flip_indicator_flips_on_its_own() -> None:
     e2e = load()
     sources: list[Source] = [e2e.FakeVirusTotal(), e2e.FakeAbuseIPDB(), e2e.FakeFeed()]
     async with httpx.AsyncClient() as http:
@@ -38,12 +38,37 @@ async def test_flip_is_safe_first_and_malicious_after() -> None:
             sources=sources,
             limiter_factory=CountingLimiter,
         )
-        levels = [(await engine.check(e2e.FLIP, no_cache=True)).level for _ in range(3)]
-        assert levels == [Level.SAFE, Level.MALICIOUS, Level.MALICIOUS]
-        # other indicators keep their behaviour
+
+        async def level(ioc: str) -> Level:
+            return (await engine.check(ioc, no_cache=True)).level
+
+        one, two = f"{e2e.FLIP_PREFIX}10", f"{e2e.FLIP_PREFIX}11"
+        assert [await level(one), await level(one), await level(one)] == [
+            Level.SAFE,
+            Level.MALICIOUS,
+            Level.MALICIOUS,
+        ]
+        # a second indicator under the prefix starts clean: a retry can use a fresh one
+        assert [await level(two), await level(two)] == [Level.SAFE, Level.MALICIOUS]
+
+
+async def test_other_indicators_keep_their_behaviour() -> None:
+    e2e = load()
+    sources: list[Source] = [e2e.FakeVirusTotal(), e2e.FakeAbuseIPDB(), e2e.FakeFeed()]
+    async with httpx.AsyncClient() as http:
+        engine = Engine(
+            Settings(_env_file=None),  # pyright: ignore[reportCallIssue]
+            load_rules(),
+            Cache(":memory:"),
+            http,
+            sources=sources,
+            limiter_factory=CountingLimiter,
+        )
         assert (await engine.check("8.8.8.8", no_cache=True)).level is Level.SAFE
-        assert (await engine.check("185.220.101.4", no_cache=True)).level is Level.MALICIOUS
+        for bad in ("185.220.101.4", f"{e2e.BAD_PREFIX}77", "evil.example"):  # malicious at once
+            assert (await engine.check(bad, no_cache=True)).level is Level.MALICIOUS
+        assert (await engine.check("9.9.8.8", no_cache=True)).level is Level.SAFE  # not the prefix
 
 
-def test_each_server_start_resets_the_flip() -> None:
-    assert load().FakeVirusTotal()._flip_seen is False  # pyright: ignore[reportPrivateUsage]
+def test_each_server_start_resets_the_flips() -> None:
+    assert load().FakeVirusTotal()._flip_seen == set()  # pyright: ignore[reportPrivateUsage]

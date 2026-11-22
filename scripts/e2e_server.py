@@ -23,9 +23,17 @@ from verdikt.sources.feeds import LocalFeeds
 PORT = int(os.environ.get("VERDIKT_E2E_PORT", "8768"))
 TOKEN = "e2e-token"  # noqa: S105
 BAD = {"185.220.101.4", "evil.example"}
-FLIP = "9.9.9.9"  # clean on the first lookup, malicious on every later one (diff and watch tests)
+# Any indicator under BAD_PREFIX is malicious at once (a fresh one per test attempt gives a live,
+# uncached answer); any under FLIP_PREFIX is clean on its first lookup and malicious after that.
+# State is per indicator and per server start, so a retried test can use a new indicator.
+BAD_PREFIX = "185.220.101."
+FLIP_PREFIX = "9.9.9."
 SAMPLES = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "feeds"
 KEV_ID = next(iter(feeds.parse_kev((SAMPLES / "kev.json").read_bytes())))
+
+
+def is_bad(value: str) -> bool:
+    return value in BAD or value.startswith(BAD_PREFIX)
 
 
 class FakeVirusTotal(BaseSource):
@@ -35,12 +43,13 @@ class FakeVirusTotal(BaseSource):
 
     def __init__(self) -> None:
         super().__init__()
-        self._flip_seen = False  # per server process, so the suite's single server starts clean
+        self._flip_seen: set[str] = set()  # per server process: the suite's one server starts clean
 
     async def lookup(self, ioc: IOC, http: Gate) -> SourceResult:
-        bad = ioc.value in BAD or (ioc.value == FLIP and self._flip_seen)
-        if ioc.value == FLIP:
-            self._flip_seen = True
+        flips = ioc.value.startswith(FLIP_PREFIX)
+        bad = is_bad(ioc.value) or (flips and ioc.value in self._flip_seen)
+        if flips:
+            self._flip_seen.add(ioc.value)
         related = (
             [
                 RelatedIOC(
@@ -67,7 +76,7 @@ class FakeAbuseIPDB(BaseSource):
     rate = (1000, 1.0)
 
     async def lookup(self, ioc: IOC, http: Gate) -> SourceResult:
-        score = 100 if ioc.value in BAD else 0
+        score = 100 if is_bad(ioc.value) else 0
         return self.result(
             Status.OK,
             f"{score}% confidence",
