@@ -180,7 +180,9 @@ class Engine:
         """Detect, query, enrich, decide, persist. Raises `DetectError` on unusable input."""
         started = time.perf_counter()
         ioc = detect(raw, self.settings.internal_domain_list)
-        active = [s for s in self.sources if s.enabled and ioc.type in s.supports]
+        active = [
+            s for s in self.sources if s.enabled and ioc.type in s.supports and s.handles(ioc)
+        ]
 
         outcomes = await asyncio.gather(
             *(self._query(s, ioc, no_cache, started) for s in active), return_exceptions=True

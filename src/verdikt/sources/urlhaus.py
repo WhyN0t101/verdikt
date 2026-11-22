@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 from datetime import timedelta
 from urllib.parse import quote
 
@@ -18,6 +19,10 @@ class URLhaus(BaseSource):
     requires_key = True
     rate = (1, 1.0)
     ttl = timedelta(hours=6)
+
+    def handles(self, ioc: IOC) -> bool:
+        # the host endpoint answers `invalid_host` for every IPv6 address, bracketed or not
+        return not (ioc.type is IOCType.IP and ipaddress.ip_address(ioc.value).version == 6)
 
     async def lookup(self, ioc: IOC, http: Gate) -> SourceResult:
         is_url = ioc.type is IOCType.URL

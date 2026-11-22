@@ -11,3 +11,5 @@ To record a new one: run `verdikt check <ioc> --json --raw --no-cache`, take the
 
 Also recorded on 2026-11-21: `rdap/example_com`, `crtsh/example_com`, `passivedns/domain` and `passivedns/ip` (VirusTotal resolutions, trimmed) and `feeds/openphish.txt`. MISP import files in the tests are hand-written from MISP's documented event format.
 
+
+Recorded on 2026-11-22 (public API replies, no key or account data): `threatfox/illegal_hash` (the answer to a SHA-1 search) and `urlhaus/invalid_host` (the answer to an IPv6 host query, bracketed or not).

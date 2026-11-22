@@ -1,0 +1,4 @@
+{
+  "query_status": "illegal_hash",
+  "data": "You did provide an illegal hash (must be MD5 or SHA256 hash)"
+}

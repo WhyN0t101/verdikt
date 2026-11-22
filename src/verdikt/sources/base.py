@@ -122,6 +122,8 @@ class Source(Protocol):
     @property
     def enabled(self) -> bool: ...
 
+    def handles(self, ioc: IOC) -> bool: ...  # finer than `supports`: False = never asked
+
     async def query(self, ioc: IOC, http: Gate) -> SourceResult: ...
 
 
@@ -143,6 +145,10 @@ class BaseSource:
     @property
     def enabled(self) -> bool:
         return bool(self._key) or not self.requires_key
+
+    def handles(self, ioc: IOC) -> bool:
+        """Whether this source can answer for `ioc`, beyond its type (`supports`). Default: yes."""
+        return True
 
     async def lookup(self, ioc: IOC, http: Gate) -> SourceResult:
         raise NotImplementedError

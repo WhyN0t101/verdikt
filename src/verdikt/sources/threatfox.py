@@ -29,7 +29,8 @@ def _is_exact(entry: dict[str, Any], ioc: IOC) -> bool:
 
 class ThreatFox(BaseSource):
     name = "threatfox"
-    supports = frozenset(IOCType)
+    # its API rejects SHA-1 (`illegal_hash`: "must be MD5 or SHA256")
+    supports = frozenset(IOCType) - {IOCType.SHA1}
     requires_key = True
     rate = (1, 1.0)
     ttl = timedelta(hours=6)
