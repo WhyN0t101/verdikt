@@ -7,7 +7,13 @@ network, no keys. **Synthetic labels guard regressions, they do not measure accu
 |---|---|
 | `corpus.jsonl` | One sample per line: `id`, defanged `ioc`, `type`, `label` (`min`/`max` over `safe < suspicious < malicious`, or `null` when the tool may abstain), `label_source` (`synthetic`, `vendor-doc`, `public-report`, `analyst`), `provenance`, `split` (`synthetic`, `dev`, `holdout`), `recorded`, and `rows`: `{source, status, metrics}` only (never `raw`, summaries or tags; `decide()` reads nothing else) |
 | `baseline.json` | The accepted `(level, confidence)` of every `synthetic` and `holdout` sample, the holdout checksum and the counts the gate must not worsen |
-| `local/` | Git-ignored rows recorded by you from licence-restricted sources (VirusTotal, AbuseIPDB, GreyNoise, Hybrid Analysis). The report merges them; CI never sees them |
+| `indicators.jsonl` | The real-world indicators (266): defanged `ioc`, `type`, `label` interval, `label_source`, `provenance` URL and title, `split` (dev or holdout), optional `note`. Metadata only, no rows; every indicator comes from a published advisory or vendor document, never from a reputation service |
+| `recorded.jsonl` | Rows `{source, status, metrics}` recorded by `scripts/eval_record.py` from open-licence sources (abuse.ch, local feeds). Committed |
+| `local/` | Git-ignored: rows from the other sources (VirusTotal, AbuseIPDB, GreyNoise, Hybrid, OTX, InternetDB, hashlookup, RDAP) and the recorder's resume state. The report merges them; CI never sees them |
+
+## Recording (one time, live)
+
+`python scripts/eval_record.py` runs the real engine with `no_cache` over `indicators.jsonl` against a throwaway database (your history, cache and audit log are untouched) and saves only `{source, status, metrics}`: never `raw`, summaries or tags. Order: holdout first, then malicious and ambiguous dev, then benign dev. Caps: VirusTotal 250 calls, AbuseIPDB 80, GreyNoise 50, Hybrid 30; urlscan and crt.sh are never queried. It is resumable (state in `local/record_state.json`), skips internal indicators, and stops at once on an auth error (401 or 403) or a quota block. It needs the keys in `.env` and an hour or so (VirusTotal allows 4 requests a minute). Real-world indicators are only evaluated in the report, not gated in CI.
 
 ## Run
 
