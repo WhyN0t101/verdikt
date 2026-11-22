@@ -23,6 +23,7 @@ from verdikt.sources.feeds import LocalFeeds
 PORT = int(os.environ.get("VERDIKT_E2E_PORT", "8768"))
 TOKEN = "e2e-token"  # noqa: S105
 BAD = {"185.220.101.4", "evil.example"}
+FLIP = "9.9.9.9"  # clean on the first lookup, malicious on every later one (diff and watch tests)
 SAMPLES = Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "feeds"
 KEV_ID = next(iter(feeds.parse_kev((SAMPLES / "kev.json").read_bytes())))
 
@@ -32,8 +33,14 @@ class FakeVirusTotal(BaseSource):
     supports = frozenset(IOCType)
     rate = (1000, 1.0)
 
+    def __init__(self) -> None:
+        super().__init__()
+        self._flip_seen = False  # per server process, so the suite's single server starts clean
+
     async def lookup(self, ioc: IOC, http: Gate) -> SourceResult:
-        bad = ioc.value in BAD
+        bad = ioc.value in BAD or (ioc.value == FLIP and self._flip_seen)
+        if ioc.value == FLIP:
+            self._flip_seen = True
         related = (
             [
                 RelatedIOC(

@@ -72,6 +72,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reports/{report_id}/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Report History */
+        get: operations["report_history_api_reports__report_id__history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/reports/{report_id}/stix": {
         parameters: {
             query?: never;
@@ -774,6 +791,27 @@ export interface components {
          * @enum {string}
          */
         IOCType: "ip" | "domain" | "url" | "md5" | "sha1" | "sha256";
+        /** IocHistory */
+        IocHistory: {
+            /** Report Id */
+            report_id: string;
+            /** Ioc */
+            ioc: string;
+            /** Reports */
+            reports: components["schemas"]["ReportSummary"][];
+            /** Truncated */
+            truncated: boolean;
+            /** Changes */
+            changes: number;
+            /** Cases */
+            cases: components["schemas"]["CaseSummary"][];
+            /** Watched */
+            watched: boolean;
+            /** Watched Since */
+            watched_since: string | null;
+            /** Events */
+            events: components["schemas"]["WatchEvent"][];
+        };
         /** JobStatus */
         JobStatus: {
             /** Name */
@@ -1296,6 +1334,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ReportDiff"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    report_history_api_reports__report_id__history_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IocHistory"];
                 };
             };
             /** @description Validation Error */

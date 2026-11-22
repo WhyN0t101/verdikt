@@ -1,4 +1,4 @@
-import type { CaseDetail, CaseSummary, Extraction, FeedImport, IOCType, JobStatus, FeedInfo, FeedUpdate, FeedbackLabel, Level, Report, ReportDiff, ReportSummary, SourceInfo, Stats, WatchChange, WatchState } from "./model";
+import type { CaseDetail, CaseSummary, Extraction, FeedImport, IOCType, JobStatus, FeedInfo, FeedUpdate, FeedbackLabel, Level, IocHistory, Report, ReportDiff, ReportSummary, SourceInfo, Stats, WatchChange, WatchState } from "./model";
 
 // The server injects a per-run token into the served page; the browser never sees API keys.
 function token(): string {
@@ -44,6 +44,7 @@ export const api = {
     if (p.offset) query.set("offset", String(p.offset));
     return call<ReportSummary[]>(`/api/reports?${query}`);
   },
+  history: (id: string) => call<IocHistory>(`/api/reports/${encodeURIComponent(id)}/history`),
   diff: (id: string, against?: string) =>
     call<ReportDiff>(`/api/reports/${encodeURIComponent(id)}/diff${against ? `?against=${encodeURIComponent(against)}` : ""}`),
   report: (id: string, raw = false) => call<Report>(`/api/reports/${encodeURIComponent(id)}?raw=${raw}`),
